@@ -1,7 +1,9 @@
-"""Claude layer: a farm chat that explains engine numbers and logs irrigation.
+"""Farm chat: explains engine numbers and logs irrigation.
 
-Claude never computes irrigation values. It can only read them through tools
+The model never computes irrigation values. It can only read them through tools
 that call the engine, and it writes to the pilot log through one tool.
+SAQI_PROVIDER=openai uses the OpenAI SDK (Gemini or any OpenAI-format API).
+Otherwise this talks to Anthropic, unchanged.
 """
 
 import json
@@ -12,15 +14,27 @@ from datetime import date
 from typing import Any, Protocol
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
+# Free-tier Gemini flash, used only when SAQI_PROVIDER=openai and SAQI_MODEL is unset.
+DEFAULT_OPENAI_MODEL = "gemini-3.8-flash"
 MAX_TOOL_ROUNDS = 6
 MAX_TOKENS = 700
 
 
-class ChatClient(Protocol):
+class _AnthropicClient(Protocol):
     """The slice of anthropic.Anthropic used here, so tests can pass a fake."""
 
     @property
     def messages(self) -> Any: ...
+
+
+class _OpenAIClient(Protocol):
+    """The slice of openai.OpenAI used here, so tests can pass a fake."""
+
+    @property
+    def chat(self) -> Any: ...
+
+
+ChatClient = _AnthropicClient | _OpenAIClient
 
 
 @dataclass
@@ -143,6 +157,23 @@ Rules:
 """
 
 
+def to_openai_tools(tools: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Anthropic tool definitions as OpenAI function tools. Drops cache_control."""
+    converted: list[dict[str, Any]] = []
+    for tool in TOOLS if tools is None else tools:
+        converted.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": dict(tool["input_schema"]),
+                },
+            }
+        )
+    return converted
+
+
 def run_chat(
     client: ChatClient,
     tools: FarmTools,
@@ -151,7 +182,9 @@ def run_chat(
     *,
     model: str | None = None,
 ) -> ChatResult:
-    """One user turn: call Claude, run any tools it asks for, return the final text."""
+    """One user turn: call the model, run any tools it asks for, return the final text."""
+    if _is_openai_client(client):
+        return _run_openai_chat(client, tools, system, history, model=model)
     messages: list[dict[str, Any]] = [
         {"role": m["role"], "content": m["content"]} for m in history if m.get("content")
     ]
@@ -191,6 +224,108 @@ def run_chat(
 
     result.reply = "Sorry, that took too many steps. Please ask again more simply."
     return result
+
+
+def _is_openai_client(client: Any) -> bool:
+    """True when the client speaks the OpenAI chat-completions API."""
+    completions = getattr(getattr(client, "chat", None), "completions", None)
+    return callable(getattr(completions, "create", None))
+
+
+def _run_openai_chat(
+    client: Any,
+    tools: FarmTools,
+    system: str,
+    history: list[dict[str, str]],
+    *,
+    model: str | None,
+) -> ChatResult:
+    """Same loop as the Anthropic path: function calls, then a final reply."""
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    messages.extend(
+        {"role": item["role"], "content": item["content"]}
+        for item in history
+        if item.get("content")
+    )
+    result = ChatResult(reply="")
+    use_model = model or os.environ.get("SAQI_MODEL", DEFAULT_OPENAI_MODEL)
+
+    for _ in range(MAX_TOOL_ROUNDS + 1):
+        response = client.chat.completions.create(
+            model=use_model,
+            max_tokens=MAX_TOKENS,
+            messages=messages,
+            tools=to_openai_tools(),
+            tool_choice="auto",
+        )
+        message = response.choices[0].message
+        calls = list(message.tool_calls or [])
+        messages.append(_openai_assistant_message(message, calls))
+        if not calls:
+            result.reply = message.content.strip() if isinstance(message.content, str) else ""
+            return result
+
+        for call in calls:
+            name = str(call.function.name)
+            result.tool_calls.append(name)
+            output = _openai_tool_output(tools, name, call.function.arguments, result)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps(output, ensure_ascii=False, default=str),
+                }
+            )
+
+    result.reply = "Sorry, that took too many steps. Please ask again more simply."
+    return result
+
+
+def _openai_assistant_message(message: Any, calls: list[Any]) -> dict[str, Any]:
+    content = message.content if isinstance(message.content, str) else None
+    out: dict[str, Any] = {"role": "assistant", "content": content}
+    if not calls:
+        return out
+    out["tool_calls"] = [
+        {
+            "id": call.id,
+            "type": getattr(call, "type", None) or "function",
+            "function": {
+                "name": call.function.name,
+                "arguments": _arguments_text(call.function.arguments),
+            },
+        }
+        for call in calls
+    ]
+    return out
+
+
+def _arguments_text(raw: Any) -> str:
+    if isinstance(raw, str):
+        return raw
+    return json.dumps({} if raw is None else raw, ensure_ascii=False)
+
+
+def _parse_tool_args(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if raw is None or raw == "":
+        return {}
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("tool arguments must be a JSON object")
+    return parsed
+
+
+def _openai_tool_output(
+    tools: FarmTools, name: str, raw_args: Any, result: ChatResult
+) -> dict[str, Any]:
+    try:
+        args = _parse_tool_args(raw_args)
+    except (ValueError, TypeError) as exc:
+        return {"error": str(exc)}
+    output, _is_error = _run_tool(tools, name, args, result)
+    return output
 
 
 def _run_tool(
@@ -263,7 +398,24 @@ def compact_day(day: Any) -> dict[str, Any]:
 
 
 def make_client() -> ChatClient | None:
-    """Real Anthropic client if ANTHROPIC_API_KEY is set, else None (chat disabled)."""
+    """LLM client from the environment, or None when chat is off.
+
+    SAQI_PROVIDER=openai uses the OpenAI SDK with OPENAI_API_KEY and, when set,
+    OPENAI_BASE_URL. The model name is SAQI_MODEL. Any other value keeps the
+    Anthropic client, which reads ANTHROPIC_API_KEY (and ANTHROPIC_BASE_URL) itself.
+    """
+    if os.environ.get("SAQI_PROVIDER", "").strip().lower() == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            return None
+        from openai import OpenAI
+
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
+        if base_url:
+            kwargs["base_url"] = base_url
+        return OpenAI(**kwargs)
+
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     import anthropic

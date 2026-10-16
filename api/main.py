@@ -298,7 +298,9 @@ def create_app(
     @app.post("/api/farms/{farm_id}/chat")
     def chat(farm_id: str, body: ChatIn) -> dict[str, Any]:
         if chat_client is None:
-            raise HTTPException(503, "Chat is off: set ANTHROPIC_API_KEY in .env")
+            raise HTTPException(
+                503, "Chat is off: set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env"
+            )
         if body.messages[-1].role != "user":
             raise HTTPException(422, "The last message must be from the user")
         config = load(farm_id)
@@ -314,7 +316,7 @@ def create_app(
             )
         except HTTPException:
             raise
-        except Exception as exc:  # anthropic.APIError and network errors
+        except Exception as exc:  # provider API errors and network failures
             raise HTTPException(502, f"The assistant is unavailable: {exc}") from exc
         return {"reply": result.reply, "logged": result.logged, "tool_calls": result.tool_calls}
 

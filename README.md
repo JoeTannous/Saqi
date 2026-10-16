@@ -18,13 +18,17 @@ Open http://127.0.0.1:8000 on this computer. To open it on a phone on the same W
 Farms load from `farms/*.yaml` (if any), otherwise `examples/*.yaml`. Copy an example to
 `farms/` to add a real pilot farm. The pilot log is written to `data/pilot_log.csv` (not committed).
 
-## Chat (Claude)
+## Chat
 
-Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` (from console.anthropic.com; API usage
-is billed separately from a Claude.ai plan). DeepSeek also works with no code changes: see
-Option B in `.env.example`. Restart uvicorn and an "Ask Saqi" panel appears under
-the plan. Without a key the page works as before and the chat stays hidden. Claude only reads
-engine numbers through tools (`api/assistant.py`) and can log irrigation the farmer reports.
+Copy `.env.example` to `.env`. Option A is Claude: set `ANTHROPIC_API_KEY` (from
+console.anthropic.com; API usage is billed separately from a Claude.ai plan). Option B is
+DeepSeek through the Anthropic-compatible endpoint, with no code changes. Option C is Gemini's
+free tier, or any OpenAI-format API: set `SAQI_PROVIDER=openai`, `OPENAI_API_KEY`,
+`OPENAI_BASE_URL` (Gemini: `https://generativelanguage.googleapis.com/v1beta/openai/`) and
+`SAQI_MODEL` (Gemini free tier: `gemini-3.8-flash`). Restart uvicorn and an "Ask Saqi" panel
+appears under the plan. Without a key the page works as before and the chat stays hidden. The
+model only reads engine numbers through tools (`api/assistant.py`) and can log irrigation the
+farmer reports.
 
 ## API
 
