@@ -1,25 +1,30 @@
 """FastAPI app: farm plans, the pilot log, and the web page.
 
 Farms load from farms/*.yaml if that folder has any, else examples/*.yaml.
-The pilot log is a CSV (data/pilot_log.csv). No database yet.
+The pilot log is a CSV (data/pilot_log.csv) unless DATABASE_URL is set, in which
+case it is a Postgres table created on startup. If SAQI_ACCESS_CODE is set, every
+/api route requires that code; GET /healthz stays open for uptime pings.
 
 Run: uvicorn api.main:app --reload   then open http://127.0.0.1:8000
 """
 
-import csv
+import hmac
 import os
 import re
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from api.assistant import (
     FarmTools,
@@ -28,6 +33,7 @@ from api.assistant import (
     run_chat,
     system_prompt,
 )
+from api.logstore import CsvLogStore, LogStore, PostgresLogStore
 from engine.balance import application_rate_mm_h
 from engine.catalog import get_crop, get_soil, load_systems
 from engine.cli import FarmConfig, farm_today, load_farm
@@ -37,8 +43,8 @@ from engine.plan import history_start, plan_days
 
 ROOT = Path(__file__).resolve().parent.parent
 WeatherFn = Callable[[Farm, date, date], list[DailyInput]]
-LOG_FIELDS = ["logged_at", "farm_id", "block_id", "date", "gross_mm", "runtime_h", "note"]
 PAST_DAYS = 7
+COOKIE_NAME = "saqi_code"
 
 
 def load_dotenv(path: Path) -> None:
@@ -61,6 +67,38 @@ class ChatMessage(BaseModel):
 class ChatIn(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=30)
     lang: Literal["ar", "fr", "en"] = "en"
+
+
+class LoginIn(BaseModel):
+    code: str = Field(min_length=1, max_length=200)
+
+
+def codes_match(given: str, expected: str) -> bool:
+    return hmac.compare_digest(given.encode("utf-8"), expected.encode("utf-8"))
+
+
+def code_from(request: Request, expected: str) -> bool:
+    given = [request.headers.get("x-saqi-code"), request.cookies.get(COOKIE_NAME)]
+    return any(item is not None and codes_match(item, expected) for item in given)
+
+
+class AccessCodeMiddleware(BaseHTTPMiddleware):
+    """Require SAQI_ACCESS_CODE on /api, via header X-Saqi-Code or the login cookie."""
+
+    def __init__(self, app: Any, code: str) -> None:
+        super().__init__(app)
+        self._code = code
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        path = request.url.path
+        if (
+            request.method != "OPTIONS"
+            and path.startswith("/api")
+            and path != "/api/login"
+            and not code_from(request, self._code)
+        ):
+            return JSONResponse({"detail": "Access code required"}, status_code=401)
+        return await call_next(request)
 
 
 class LogEntryIn(BaseModel):
@@ -100,21 +138,44 @@ def open_meteo_weather(cache_dir: Path) -> WeatherFn:
 def create_app(
     farms_dir: Path | None = None,
     log_path: Path | None = None,
+    log_store: LogStore | None = None,
     weather: WeatherFn | None = None,
     today_fn: Callable[[str], date] | None = None,
     web_dir: Path | None = None,
     chat_client: Any = "auto",
+    access_code: str | None = None,
 ) -> FastAPI:
     farms_root = farms_dir or default_farms_dir()
-    log_file = log_path or ROOT / "data" / "pilot_log.csv"
     get_weather = weather or open_meteo_weather(ROOT / ".cache")
     local_today = today_fn or farm_today
     static_dir = web_dir if web_dir is not None else ROOT / "web"
     if chat_client == "auto":
         load_dotenv(ROOT / ".env")
         chat_client = make_client()
+    if log_store is not None:
+        store = log_store
+    elif log_path is not None:
+        store = CsvLogStore(log_path)
+    else:
+        database_url = os.environ.get("DATABASE_URL", "").strip()
+        store = (
+            PostgresLogStore(database_url)
+            if database_url
+            else CsvLogStore(ROOT / "data" / "pilot_log.csv")
+        )
+    code = access_code if access_code is not None else os.environ.get("SAQI_ACCESS_CODE", "")
+    code = code.strip()
 
-    app = FastAPI(title="Saqi", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        store.ensure_schema()
+        yield
+
+    app = FastAPI(title="Saqi", version="0.1.0", lifespan=lifespan)
+    # The last middleware added is the outermost. CORS stays outside the access
+    # check so a 401 still carries the CORS headers.
+    if code:
+        app.add_middleware(AccessCodeMiddleware, code=code)
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -140,10 +201,7 @@ def create_app(
         raise HTTPException(404, f"No block called {block_id!r}")
 
     def read_log(farm_id: str) -> list[dict[str, str]]:
-        if not log_file.is_file():
-            return []
-        with log_file.open(encoding="utf-8", newline="") as handle:
-            return [row for row in csv.DictReader(handle) if row["farm_id"] == farm_id]
+        return store.read(farm_id)
 
     def logged_gross(rows: list[dict[str, str]], block_id: str) -> dict[date, float]:
         totals: dict[date, float] = {}
@@ -175,6 +233,27 @@ def create_app(
             )
             plans.append((block, days))
         return plans
+
+    @app.get("/healthz")
+    def healthz() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.post("/api/login")
+    def login(body: LoginIn, request: Request, response: Response) -> dict[str, bool]:
+        if not code:
+            raise HTTPException(404, "No access code is set")
+        if not codes_match(body.code, code):
+            raise HTTPException(401, "Wrong access code")
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=code,
+            httponly=True,
+            samesite="lax",
+            secure=request.url.scheme == "https",
+            max_age=60 * 60 * 24 * 180,
+            path="/",
+        )
+        return {"ok": True}
 
     @app.get("/api/farms")
     def list_farms() -> list[dict[str, Any]]:
@@ -242,13 +321,7 @@ def create_app(
             "runtime_h": f"{hours:.3f}",
             "note": entry.note.strip(),
         }
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        new_file = not log_file.is_file()
-        with log_file.open("a", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=LOG_FIELDS)
-            if new_file:
-                writer.writeheader()
-            writer.writerow(row)
+        store.append(row)
         return row
 
     @app.post("/api/farms/{farm_id}/blocks/{block_id}/log", status_code=201)

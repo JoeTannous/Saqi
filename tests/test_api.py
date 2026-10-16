@@ -39,7 +39,9 @@ def fake_weather(farm: Farm, start: date, today: date) -> list[DailyInput]:
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("SAQI_ACCESS_CODE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     farms = tmp_path / "farms"
     farms.mkdir()
     (farms / "test.yaml").write_text(FARM_YAML, encoding="utf-8")
@@ -127,6 +129,68 @@ def test_log_rejects_future_and_ambiguous_entries(client: TestClient) -> None:
 
 def test_empty_log(client: TestClient) -> None:
     assert client.get("/api/farms/test/log").json() == []
+
+
+def test_healthz_is_open_and_login_is_unused_without_a_code(client: TestClient) -> None:
+    assert client.get("/healthz").json() == {"ok": True}
+    assert client.get("/api/farms").status_code == 200
+    assert client.post("/api/login", json={"code": "anything"}).status_code == 404
+
+
+def test_access_code_gates_api_routes(tmp_path: Path) -> None:
+    farms = tmp_path / "farms"
+    farms.mkdir()
+    (farms / "test.yaml").write_text(FARM_YAML, encoding="utf-8")
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<title>Saqi</title>", encoding="utf-8")
+    app = create_app(
+        farms_dir=farms,
+        log_path=tmp_path / "log.csv",
+        weather=fake_weather,
+        today_fn=lambda tz: TODAY,
+        web_dir=web,
+        chat_client=None,
+        access_code="pilot",
+    )
+    client = TestClient(app)
+    assert client.get("/healthz").json() == {"ok": True}
+    assert client.get("/").status_code == 200
+    assert client.get("/api/farms").status_code == 401
+    assert client.get("/api/farms", headers={"X-Saqi-Code": "nope"}).status_code == 401
+    assert client.post("/api/login", json={"code": "nope"}).status_code == 401
+    assert client.get("/api/farms").status_code == 401
+
+    allowed = client.get("/api/farms", headers={"X-Saqi-Code": "pilot"})
+    assert allowed.status_code == 200
+
+    logged_in = client.post("/api/login", json={"code": "pilot"})
+    assert logged_in.status_code == 200
+    assert logged_in.json() == {"ok": True}
+    assert "httponly" in logged_in.headers["set-cookie"].lower()
+    assert client.get("/api/farms").status_code == 200
+
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    saved = client.post(
+        "/api/farms/test/blocks/block-1/log",
+        json={"date": yesterday, "runtime_h": 2},
+    )
+    assert saved.status_code == 201
+
+    fresh = TestClient(app)
+    assert fresh.get("/healthz").status_code == 200
+    assert fresh.get("/api/farms").status_code == 401
+    blocked = fresh.post(
+        "/api/farms/test/blocks/block-1/log",
+        json={"date": yesterday, "runtime_h": 1},
+    )
+    assert blocked.status_code == 401
+    with_header = fresh.post(
+        "/api/farms/test/blocks/block-1/log",
+        headers={"X-Saqi-Code": "pilot"},
+        json={"date": yesterday, "gross_mm": 4},
+    )
+    assert with_header.status_code == 201
 
 
 def test_web_page_is_served(tmp_path: Path) -> None:

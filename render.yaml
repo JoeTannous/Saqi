@@ -1,0 +1,27 @@
+# Render Blueprint: one free Python web service for the Saqi farm page.
+# Secrets are entered in the dashboard (sync: false) and are not stored here.
+services:
+  - type: web
+    name: saqi
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: SAQI_ACCESS_CODE
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SAQI_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: SAQI_MODEL
+        sync: false
+      - key: SAQI_FALLBACK_MODEL
+        sync: false

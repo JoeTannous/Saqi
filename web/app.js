@@ -6,6 +6,10 @@ const T = {
     chatTitle: "Ask Saqi", chatHint: "Ask about today's advice, or tell Saqi what you irrigated and it will log it.",
     send: "Send", thinking: "Thinking…", loggedNote: (rt, d) => `Logged: ${rt} on ${d}`,
     chatError: "Saqi couldn't answer.",
+    gateTitle: "Access code",
+    gateHint: "This page is private. Enter the code you were given.",
+    gateSubmit: "Continue",
+    gateError: "That code was not accepted.",
     chips: ["Why this amount today?", "I irrigated 2 hours today", "Is rain coming this week?"],
     farm: "Farm", loading: "Loading today's plan…", why: "How this was worked out",
     logOpen: "Log irrigation", date: "Date", howMuch: "How much did you run?",
@@ -41,6 +45,10 @@ const T = {
     chatTitle: "Demander à Saqi", chatHint: "Posez une question sur le conseil du jour, ou dites à Saqi ce que vous avez arrosé et il le notera.",
     send: "Envoyer", thinking: "Réflexion…", loggedNote: (rt, d) => `Noté : ${rt} le ${d}`,
     chatError: "Saqi n'a pas pu répondre.",
+    gateTitle: "Code d'accès",
+    gateHint: "Cette page est privée. Entrez le code qui vous a été donné.",
+    gateSubmit: "Continuer",
+    gateError: "Ce code n'est pas accepté.",
     chips: ["Pourquoi cette quantité ?", "J'ai arrosé 2 h aujourd'hui", "Va-t-il pleuvoir cette semaine ?"],
     farm: "Ferme", loading: "Chargement du plan du jour…", why: "Comment c'est calculé",
     logOpen: "Noter une irrigation", date: "Date", howMuch: "Combien avez-vous irrigué ?",
@@ -76,6 +84,10 @@ const T = {
     chatTitle: "اسأل ساقي", chatHint: "اسأل عن توصية اليوم، أو أخبر ساقي كم سقيت وهو يسجّلها.",
     send: "إرسال", thinking: "عم فكّر…", loggedNote: (rt, d) => `تم التسجيل: ${rt} بتاريخ ${d}`,
     chatError: "ما قدر ساقي يجاوب.",
+    gateTitle: "رمز الدخول",
+    gateHint: "هذه الصفحة خاصة. أدخل الرمز الذي أُعطي لك.",
+    gateSubmit: "متابعة",
+    gateError: "هذا الرمز غير صحيح.",
     chips: ["ليش هالكمية اليوم؟", "سقيت ساعتين اليوم", "في شتي هالجمعة؟"],
     farm: "المزرعة", loading: "جارٍ تحميل خطة اليوم…", why: "كيف حُسبت هذه التوصية",
     logOpen: "سجّل الري", date: "التاريخ", howMuch: "كم شغّلت الري؟",
@@ -157,11 +169,69 @@ function applyStatic() {
   document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
 }
 
+let memoryCode = "";
+let codeWait = null;
+let codeWaitResolve = null;
+
+function storedCode() {
+  if (memoryCode) return memoryCode;
+  try { return localStorage.getItem("saqi.code") || ""; }
+  catch (_) { return ""; }
+}
+function saveCode(code) {
+  memoryCode = code;
+  try { localStorage.setItem("saqi.code", code); }
+  catch (_) { /* storage blocked; kept for this visit */ }
+}
+function showGate(rejected) {
+  $("#gate").hidden = false;
+  $("#main").hidden = true;
+  $("#chat").hidden = true;
+  applyStatic();
+  $("#gate-error").hidden = !rejected;
+  const input = $("#gate-code");
+  if (document.activeElement !== input) input.focus();
+}
+function hideGate() {
+  const gate = $("#gate");
+  if (!gate || gate.hidden) return;
+  gate.hidden = true;
+  $("#main").hidden = false;
+}
+function waitForCode(rejected) {
+  showGate(rejected);
+  if (!codeWait) codeWait = new Promise((resolve) => { codeWaitResolve = resolve; });
+  return codeWait;
+}
+function wireGate() {
+  $("#gate-code").addEventListener("input", () => { $("#gate-error").hidden = true; });
+  $("#gate-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const code = $("#gate-code").value.trim();
+    if (!code) return;
+    saveCode(code);
+    const resolve = codeWaitResolve;
+    codeWait = null;
+    codeWaitResolve = null;
+    if (resolve) resolve();
+  });
+}
+
 async function api(path, opts) {
-  const res = await fetch(`/api${path}`, opts);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
-  return body;
+  for (;;) {
+    const headers = new Headers((opts && opts.headers) || {});
+    const code = storedCode();
+    if (code) headers.set("X-Saqi-Code", code);
+    const res = await fetch(`/api${path}`, Object.assign({}, opts, { headers }));
+    if (res.status === 401) {
+      await waitForCode(code !== "");
+      continue;
+    }
+    hideGate();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+    return body;
+  }
 }
 
 function setStatus(text, isError = false) {
@@ -175,6 +245,7 @@ function setStatus(text, isError = false) {
 
 async function init() {
   applyStatic();
+  wireGate();
   document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => {
     lang = b.dataset.lang;
     try { localStorage.setItem("saqi.lang", lang); } catch (_) { /* ignore */ }

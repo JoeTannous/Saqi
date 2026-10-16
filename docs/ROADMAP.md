@@ -14,7 +14,7 @@ Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3
 - [x] UI: mobile farm page in web/ (AR/FR/EN, today + 7 days, soil-water column, explanation, pilot log)
 - [x] Claude layer: farm chat in AR/FR/EN with engine tools (get_plan, get_history, log_irrigation); offline fixed-text explanation stays as fallback
 - [ ] Test the chat with a real API key: Lebanese-dialect questions, "سقيت ساعتين" logging, out-of-scope questions (pests), trick questions ("roughly how much next month?")
-- [ ] Deploy (Railway/Fly) so the page works on a phone in Lebanon
+- [ ] Deploy on Render (blueprint in render.yaml) so the page works on a phone in Lebanon
 - [ ] Dry run on real pilot farm coordinates before flying (1 Nov 2026)
 
 ## Trip MVP scope (before 1 Nov 2026)

@@ -83,6 +83,24 @@ main { max-width: 600px; margin: 0 auto; padding: 4px 16px 24px; }
 .status { color: var(--muted); padding: 32px 0; }
 .status.error { color: var(--danger); }
 
+.gate { max-width: 600px; margin: 0 auto; padding: 8px 16px 24px; }
+.gate-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+.gate-card h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.gate-hint { margin: 0 0 14px; color: var(--muted); }
+.gate-card input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  margin-bottom: 14px;
+}
+
 .block {
   background: var(--surface);
   border-radius: var(--radius-lg);

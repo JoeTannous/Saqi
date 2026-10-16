@@ -31,6 +31,19 @@
     </div>
   </header>
 
+  <div id="gate" class="gate" hidden>
+    <form id="gate-form" class="gate-card">
+      <h2 data-i18n="gateTitle">Access code</h2>
+      <p class="gate-hint" data-i18n="gateHint">This page is private. Enter the code you were given.</p>
+      <label class="field">
+        <span class="sr" data-i18n="gateTitle">Access code</span>
+        <input id="gate-code" type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required maxlength="200">
+      </label>
+      <p id="gate-error" class="form-error" role="alert" hidden data-i18n="gateError">That code was not accepted.</p>
+      <button type="submit" class="primary" data-i18n="gateSubmit">Continue</button>
+    </form>
+  </div>
+
   <main id="main" aria-live="polite">
     <p class="status" id="status" data-i18n="loading">Loading today's plan…</p>
   </main>

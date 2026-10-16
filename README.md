@@ -17,6 +17,7 @@ Open http://127.0.0.1:8000 on this computer. To open it on a phone on the same W
 
 Farms load from `farms/*.yaml` (if any), otherwise `examples/*.yaml`. Copy an example to
 `farms/` to add a real pilot farm. The pilot log is written to `data/pilot_log.csv` (not committed).
+If `DATABASE_URL` is set, the same log is stored in Postgres instead.
 
 ## Chat
 
@@ -38,6 +39,31 @@ farmer reports.
 - `GET /api/farms/{farm}/log` — logged irrigation next to what was recommended
 - `GET /api/assistant` — whether chat is on
 - `POST /api/farms/{farm}/chat` — `{messages: [{role, content}], lang}`
+- `GET /healthz` — `{"ok": true}`, for uptime pings. Never asks for the access code.
+- `POST /api/login` — `{code}`. Used only when `SAQI_ACCESS_CODE` is set; sets an HttpOnly cookie.
+
+If `SAQI_ACCESS_CODE` is set, every `/api` route requires that code in the `X-Saqi-Code` header
+or in the cookie from `POST /api/login`. The page asks for it once and keeps it in the browser.
+Without the variable, the API stays open.
+
+## Deploy
+
+The page can run as one free [Render](https://render.com) web service, with the pilot log in
+[Supabase](https://supabase.com) Postgres. `render.yaml` is the blueprint.
+
+1. In Supabase: **Connect** → copy the **Session pooler** connection string, the IPv4 one
+   (host `*.pooler.supabase.com`, port **5432**). Put that string in `DATABASE_URL`.
+   The direct host (`db.<project>.supabase.co`) is IPv6-only, and a free Render instance cannot reach it.
+2. In Render: **New** → **Blueprint**, and select this repo. Render reads `render.yaml`
+   (Python 3.12, `pip install -e .`, uvicorn on `$PORT`).
+3. When Render asks, set the environment variables. `SAQI_ACCESS_CODE` is the shared code for
+   the farm page. `DATABASE_URL` is the pooler string from step 1. For Ask Saqi, also set
+   `SAQI_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `SAQI_MODEL`, and `SAQI_FALLBACK_MODEL`.
+   Leave a chat variable blank if you are not using that provider.
+4. Open the service URL. The page asks for the access code, then works like it does locally.
+   Saqi creates the `pilot_log` table on startup if it is missing.
+5. Optional: point a free uptime monitor at `https://<service>.onrender.com/healthz` every
+   10 minutes. That ping does not need the access code, and it keeps the free instance from sleeping.
 
 ## CLI
 
