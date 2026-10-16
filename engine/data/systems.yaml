@@ -1,14 +1,23 @@
-# Application efficiency used when a block does not set its own.
-# docs/SPEC.md. micro_sprinkler has no default there, so it is omitted
-# and the block must set efficiency. verify: true.
+# Application efficiency used when a block does not set its own, and the
+# longest single set (hours) a farmer will run before the rest is carried to
+# the next day. Efficiencies are from docs/SPEC.md. micro_sprinkler 0.85 and
+# every max_runtime_h are working guesses from the sanity check
+# (docs/SANITY.md). All verify: true.
 
 drip:
   verify: true
   efficiency: 0.90
+  max_runtime_h: 8
+
+micro_sprinkler:
+  verify: true
+  efficiency: 0.85
+  max_runtime_h: 8
 
 sprinkler:
   verify: true
   efficiency: 0.75
+  max_runtime_h: 8
 
 pivot:
   verify: true

@@ -33,6 +33,7 @@ class SystemParams(BaseModel):
     emitter_spacing_m: float | None = Field(default=None, gt=0)
     lateral_spacing_m: float | None = Field(default=None, gt=0)
     application_rate_mm_h: float | None = Field(default=None, gt=0)
+    max_runtime_h: float | None = Field(default=None, gt=0)
 
 
 class Block(BaseModel):
@@ -63,6 +64,11 @@ class Block(BaseModel):
                 raise ValueError(f"efficiency is required for system {self.system!r}")
             params = params.model_copy(update={"efficiency": record.efficiency})
             self.system_params = params
+        if params.max_runtime_h is None:
+            record = load_systems().get(self.system)
+            if record is not None and record.max_runtime_h is not None:
+                params = params.model_copy(update={"max_runtime_h": record.max_runtime_h})
+                self.system_params = params
 
         if self.system == "drip":
             missing = [
@@ -143,6 +149,7 @@ class SystemRecord(BaseModel):
 
     verify: bool
     efficiency: float = Field(gt=0, le=1)
+    max_runtime_h: float | None = Field(default=None, gt=0)
 
 
 class SoilRecord(BaseModel):
@@ -159,3 +166,21 @@ class SoilRecord(BaseModel):
         if self.theta_fc <= self.theta_wp:
             raise ValueError("theta_fc must exceed theta_wp")
         return self
+
+
+class PlanDay(DailyResult):
+    """One day of a farm plan: the recommendation plus what the balance assumed was applied.
+
+    dr_mm is depletion before any irrigation that day (compare it with RAW).
+    dr_end_mm is depletion after the applied depth. capped means the recommendation
+    was cut to the block's max runtime and the rest carries to the next day.
+    """
+
+    rain_mm: float
+    observed: bool
+    capped: bool
+    applied_net_mm: float
+    applied_source: Literal["logged", "assumed"]
+    logged_gross_mm: float | None
+    logged_runtime_h: float | None
+    dr_end_mm: float

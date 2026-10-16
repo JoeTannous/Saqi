@@ -79,14 +79,24 @@ def test_soil_reference_values(name: str, theta_fc: float, theta_wp: float) -> N
 
 
 def test_system_efficiency_defaults() -> None:
-    # SPEC defaults. micro_sprinkler is absent, so a block must set its own.
+    # SPEC defaults, plus micro_sprinkler 0.85 (a working guess, verify: true).
     systems = load_systems()
     assert systems["drip"].efficiency == pytest.approx(0.90)
     assert systems["sprinkler"].efficiency == pytest.approx(0.75)
     assert systems["pivot"].efficiency == pytest.approx(0.85)
     assert systems["surface"].efficiency == pytest.approx(0.60)
     assert all(record.verify is True for record in systems.values())
-    assert "micro_sprinkler" not in systems
+    assert systems["micro_sprinkler"].efficiency == pytest.approx(0.85)
+
+
+def test_max_runtime_defaults() -> None:
+    # Longest single set before the rest carries over. Pivot and surface have no cap.
+    systems = load_systems()
+    assert systems["drip"].max_runtime_h == pytest.approx(8.0)
+    assert systems["micro_sprinkler"].max_runtime_h == pytest.approx(8.0)
+    assert systems["sprinkler"].max_runtime_h == pytest.approx(8.0)
+    assert systems["pivot"].max_runtime_h is None
+    assert systems["surface"].max_runtime_h is None
 
 
 def test_catalog_covers_the_spec_lists_only() -> None:

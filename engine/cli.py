@@ -11,8 +11,10 @@ import httpx
 import yaml
 
 from engine.models import Block, DailyInput, DailyResult, Farm
-from engine.simulate import simulate
-from engine.weather import fetch_archive, fetch_forecast
+
+__all__ = ["daily_inputs_for", "simulate_plan", "plan_block", "load_farm", "run", "main"]
+from engine.inputs import daily_inputs_for
+from engine.plan import plan_days
 
 _COLUMNS = (
     "{date:<10}  {source:<8}  {et0:>5}  {rain:>5}  {kc:>4}  "
@@ -84,82 +86,10 @@ def load_farm(path: Path, today: date | None = None) -> FarmConfig:
     return FarmConfig(farm=farm, blocks=blocks, today=today)
 
 
-def daily_inputs_for(
-    farm: Farm,
-    today: date,
-    backfill_from: date | None,
-    client: httpx.Client,
-    cache_dir: Path,
-) -> list[DailyInput]:
-    """Forecast window, or archive from backfill_from through yesterday.
-
-    ERA5 lags about five days and the archive response ends in nulls. Those
-    days are filled from the forecast API, which keeps seven past days. A
-    longer hole is an error: the balance cannot skip a day.
-    """
-    if backfill_from is None:
-        return fetch_forecast(
-            farm.lat,
-            farm.lon,
-            today=today,
-            client=client,
-            cache_dir=cache_dir,
-        )
-
-    yesterday = today - timedelta(days=1)
-    if backfill_from > yesterday:
-        raise ValueError("--backfill-from must be on or before yesterday")
-
-    archived = fetch_archive(
-        farm.lat,
-        farm.lon,
-        backfill_from,
-        yesterday,
-        client=client,
-        cache_dir=cache_dir,
-    )
-    archived = [day for day in archived if backfill_from <= day.date <= yesterday]
-    if not archived or archived[0].date != backfill_from:
-        raise ValueError(f"archive weather does not start on {backfill_from.isoformat()}")
-    if archived[-1].date == yesterday:
-        return archived
-
-    gap_start = archived[-1].date + timedelta(days=1)
-    recent = fetch_forecast(
-        farm.lat,
-        farm.lon,
-        today=today,
-        client=client,
-        cache_dir=cache_dir,
-    )
-    filler = [day for day in recent if gap_start <= day.date <= yesterday]
-    if not _covers(filler, gap_start, yesterday):
-        raise ValueError(
-            f"archive ends {archived[-1].date.isoformat()} and forecast weather does not "
-            f"cover {gap_start.isoformat()} through {yesterday.isoformat()}"
-        )
-    return archived + filler
-
-
 def simulate_plan(block: Block, daily_inputs: list[DailyInput]) -> list[DailyResult]:
-    """Recommend each day, then carry depletion as if that net depth was applied.
-
-    The Dr kept on each result is the depletion with nothing applied yet, so
-    the table can compare it with RAW. simulate() only reduces the next day's
-    depletion when irrigation_applied_mm is set, so a recommended day is run
-    again with that net depth before moving on.
-    """
-    dr_mm = 0.0
-    results: list[DailyResult] = []
-    for day in daily_inputs:
-        preview = simulate(block, [day], dr_start_mm=dr_mm)[0]
-        results.append(preview)
-        if preview.net_mm == 0.0:
-            dr_mm = preview.dr_mm
-            continue
-        applied = day.model_copy(update={"irrigation_applied_mm": preview.net_mm})
-        dr_mm = simulate(block, [applied], dr_start_mm=dr_mm)[0].dr_mm
-    return results
+    """Recommend each day and assume the farmer applied it. See engine.plan.plan_days."""
+    today = daily_inputs[-1].date + timedelta(days=1) if daily_inputs else date.today()
+    return list(plan_days(block, daily_inputs, today=today))
 
 
 def plan_block(block: Block, daily_inputs: list[DailyInput]) -> BlockPlan:
@@ -255,13 +185,6 @@ def _load_block(item: object, today: date, index: int) -> Block:
             raise ValueError(f"block {index} planting_days_ago must be >= 0")
         data["planting_date"] = today - timedelta(days=days_ago)
     return Block.model_validate(data)
-
-
-def _covers(days: list[DailyInput], start: date, end: date) -> bool:
-    expected = (end - start).days + 1
-    if len(days) != expected:
-        return False
-    return all(day.date == start + timedelta(days=index) for index, day in enumerate(days))
 
 
 def _format_block(config: FarmConfig, plan: BlockPlan) -> str:

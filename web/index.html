@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#eef3f1">
+  <title>Saqi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2.5c3.6 4.6 6.5 8.3 6.5 11.6A6.5 6.5 0 0 1 5.5 14.1C5.5 10.8 8.4 7.1 12 2.5Z" fill="currentColor"/></svg>
+      </span>
+      <span class="wordmark">Saqi</span>
+    </div>
+    <div class="controls">
+      <label class="farm-pick">
+        <span class="sr" data-i18n="farm">Farm</span>
+        <select id="farm"></select>
+      </label>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="ar" lang="ar">ع</button>
+        <button type="button" data-lang="fr">FR</button>
+        <button type="button" data-lang="en">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" aria-live="polite">
+    <p class="status" id="status" data-i18n="loading">Loading today's plan…</p>
+  </main>
+
+  <template id="block-tpl">
+    <section class="block">
+      <div class="block-head">
+        <h2 class="block-name"></h2>
+        <p class="block-meta"></p>
+      </div>
+
+      <div class="today">
+        <div class="verdict">
+          <p class="when"></p>
+          <p class="answer"></p>
+          <p class="detail"></p>
+          <p class="carry" hidden></p>
+        </div>
+        <figure class="profile">
+          <svg viewBox="0 0 120 200" role="img"></svg>
+          <figcaption></figcaption>
+        </figure>
+      </div>
+
+      <ol class="week" aria-label="Next 7 days"></ol>
+
+      <details class="why">
+        <summary data-i18n="why">How this was worked out</summary>
+        <div class="why-body"></div>
+      </details>
+
+      <div class="log-area">
+        <button type="button" class="log-open" data-i18n="logOpen">Log irrigation</button>
+        <form class="log-form" hidden>
+          <div class="field">
+            <label data-i18n="date">Date</label>
+            <input type="date" name="date" required>
+          </div>
+          <fieldset class="field amount">
+            <legend data-i18n="howMuch">How much did you run?</legend>
+            <div class="seg" role="radiogroup">
+              <label><input type="radio" name="unit" value="time" checked><span data-i18n="byTime">Hours</span></label>
+              <label><input type="radio" name="unit" value="mm"><span data-i18n="byMm">Millimetres</span></label>
+            </div>
+            <div class="by-time">
+              <label class="inline"><input type="number" name="hours" min="0" max="48" step="1" inputmode="numeric" value="0"><span data-i18n="h">h</span></label>
+              <label class="inline"><input type="number" name="minutes" min="0" max="59" step="5" inputmode="numeric" value="0"><span data-i18n="min">min</span></label>
+            </div>
+            <div class="by-mm" hidden>
+              <label class="inline"><input type="number" name="mm" min="0" max="500" step="0.5" inputmode="decimal"><span>mm</span></label>
+            </div>
+          </fieldset>
+          <div class="field">
+            <label data-i18n="note">Note (optional)</label>
+            <input type="text" name="note" maxlength="500">
+          </div>
+          <p class="form-error" role="alert" hidden></p>
+          <div class="actions">
+            <button type="submit" class="primary" data-i18n="save">Save irrigation</button>
+            <button type="button" class="ghost log-cancel" data-i18n="cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <details class="past">
+        <summary data-i18n="pastWeek">Last 7 days: planned and done</summary>
+        <table>
+          <thead><tr><th data-i18n="day">Day</th><th data-i18n="planned">Planned</th><th data-i18n="done">Done</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="past-note" data-i18n="pastNote">Days without a log are counted as if the plan was followed.</p>
+      </details>
+    </section>
+  </template>
+
+  <footer class="foot">
+    <p id="caveat" hidden></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

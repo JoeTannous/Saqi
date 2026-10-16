@@ -314,7 +314,7 @@ def test_main_prints_the_example_farm(
     ) -> list[DailyInput]:
         return [DailyInput(date=today, et0_mm=4.0, rain_mm=0.0)]
 
-    monkeypatch.setattr("engine.cli.fetch_forecast", fake_forecast)
+    monkeypatch.setattr("engine.inputs.fetch_forecast", fake_forecast)
     code = main(["--farm", str(ROOT / "examples" / "bekaa_potato.yaml")])
     out = capsys.readouterr().out
 
@@ -346,8 +346,8 @@ def test_main_backfill_prints_observed_days(
     def fail_forecast(*args: object, **kwargs: object) -> list[DailyInput]:
         raise AssertionError("forecast should not be called when the archive is complete")
 
-    monkeypatch.setattr("engine.cli.fetch_archive", fake_archive)
-    monkeypatch.setattr("engine.cli.fetch_forecast", fail_forecast)
+    monkeypatch.setattr("engine.inputs.fetch_archive", fake_archive)
+    monkeypatch.setattr("engine.inputs.fetch_forecast", fail_forecast)
     code = main(
         [
             "--farm",

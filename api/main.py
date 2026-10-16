@@ -1,0 +1,273 @@
+"""FastAPI app: farm plans, the pilot log, and the web page.
+
+Farms load from farms/*.yaml if that folder has any, else examples/*.yaml.
+The pilot log is a CSV (data/pilot_log.csv). No database yet.
+
+Run: uvicorn api.main:app --reload   then open http://127.0.0.1:8000
+"""
+
+import csv
+import re
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import httpx
+import yaml
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, model_validator
+
+from engine.balance import application_rate_mm_h
+from engine.catalog import get_crop, get_soil, load_systems
+from engine.cli import FarmConfig, farm_today, load_farm
+from engine.inputs import full_window
+from engine.models import Block, DailyInput, Farm, PlanDay
+from engine.plan import history_start, plan_days
+
+ROOT = Path(__file__).resolve().parent.parent
+WeatherFn = Callable[[Farm, date, date], list[DailyInput]]
+LOG_FIELDS = ["logged_at", "farm_id", "block_id", "date", "gross_mm", "runtime_h", "note"]
+PAST_DAYS = 7
+
+
+class LogEntryIn(BaseModel):
+    """What the farmer reports: a depth or a runtime, not both."""
+
+    date: date
+    gross_mm: float | None = Field(default=None, gt=0, le=500)
+    runtime_h: float | None = Field(default=None, gt=0, le=48)
+    note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def _one_amount(self) -> "LogEntryIn":
+        if (self.gross_mm is None) == (self.runtime_h is None):
+            raise ValueError("give either gross_mm or runtime_h")
+        return self
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "block"
+
+
+def default_farms_dir() -> Path:
+    farms = ROOT / "farms"
+    if farms.is_dir() and any(farms.glob("*.yaml")):
+        return farms
+    return ROOT / "examples"
+
+
+def open_meteo_weather(cache_dir: Path) -> WeatherFn:
+    def fetch(farm: Farm, start: date, today: date) -> list[DailyInput]:
+        with httpx.Client(timeout=30.0, headers={"User-Agent": "saqi/0.1"}) as client:
+            return full_window(farm, start, today, client, cache_dir)
+
+    return fetch
+
+
+def create_app(
+    farms_dir: Path | None = None,
+    log_path: Path | None = None,
+    weather: WeatherFn | None = None,
+    today_fn: Callable[[str], date] | None = None,
+    web_dir: Path | None = None,
+) -> FastAPI:
+    farms_root = farms_dir or default_farms_dir()
+    log_file = log_path or ROOT / "data" / "pilot_log.csv"
+    get_weather = weather or open_meteo_weather(ROOT / ".cache")
+    local_today = today_fn or farm_today
+    static_dir = web_dir if web_dir is not None else ROOT / "web"
+
+    app = FastAPI(title="Saqi", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    def farm_paths() -> dict[str, Path]:
+        return {path.stem: path for path in sorted(farms_root.glob("*.yaml"))}
+
+    def load(farm_id: str) -> FarmConfig:
+        path = farm_paths().get(farm_id)
+        if path is None:
+            raise HTTPException(404, f"No farm called {farm_id!r}")
+        with path.open(encoding="utf-8") as handle:
+            tz = (yaml.safe_load(handle) or {}).get("timezone", "UTC")
+        return load_farm(path, today=local_today(tz))
+
+    def find_block(config: FarmConfig, block_id: str) -> Block:
+        for block in config.blocks:
+            if slug(block.name) == block_id:
+                return block
+        raise HTTPException(404, f"No block called {block_id!r}")
+
+    def read_log(farm_id: str) -> list[dict[str, str]]:
+        if not log_file.is_file():
+            return []
+        with log_file.open(encoding="utf-8", newline="") as handle:
+            return [row for row in csv.DictReader(handle) if row["farm_id"] == farm_id]
+
+    def logged_gross(rows: list[dict[str, str]], block_id: str) -> dict[date, float]:
+        totals: dict[date, float] = {}
+        for row in rows:
+            if row["block_id"] == block_id:
+                day = date.fromisoformat(row["date"])
+                totals[day] = totals.get(day, 0.0) + float(row["gross_mm"])
+        return totals
+
+    def block_plans(config: FarmConfig, farm_id: str) -> list[tuple[Block, list[PlanDay]]]:
+        today = config.today
+        start = min(history_start(block, today) for block in config.blocks)
+        try:
+            inputs = get_weather(config.farm, start, today)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(502, f"Weather is unavailable: {exc}") from exc
+        rows = read_log(farm_id)
+        plans = []
+        for block in config.blocks:
+            own_start = history_start(block, today)
+            usable = [day for day in inputs if day.date >= own_start]
+            days = list(
+                plan_days(
+                    block,
+                    usable,
+                    today=today,
+                    logged_gross_mm=logged_gross(rows, slug(block.name)),
+                )
+            )
+            plans.append((block, days))
+        return plans
+
+    @app.get("/api/farms")
+    def list_farms() -> list[dict[str, Any]]:
+        out = []
+        for farm_id in farm_paths():
+            config = load(farm_id)
+            out.append(
+                {
+                    "id": farm_id,
+                    "name": config.farm.name,
+                    "lat": config.farm.lat,
+                    "lon": config.farm.lon,
+                    "blocks": [
+                        {"id": slug(b.name), "name": b.name, "crop": b.crop} for b in config.blocks
+                    ],
+                }
+            )
+        return out
+
+    @app.get("/api/farms/{farm_id}/plan")
+    def farm_plan(farm_id: str) -> dict[str, Any]:
+        config = load(farm_id)
+        today = config.today
+        blocks_out = []
+        for block, days in block_plans(config, farm_id):
+            by_date = {day.date: day for day in days}
+            week_ago = today - timedelta(days=PAST_DAYS)
+            if today not in by_date:
+                raise HTTPException(502, "Weather has no row for today")
+            blocks_out.append(
+                {
+                    **block_info(block),
+                    "today": by_date[today],
+                    "past": [d for d in days if week_ago <= d.date < today],
+                    "forecast": [d for d in days if d.date > today],
+                    "history_from": days[0].date if days else None,
+                }
+            )
+        return {
+            "farm": {"id": farm_id, **config.farm.model_dump(exclude={"owner_whatsapp"})},
+            "today": today,
+            "blocks": blocks_out,
+        }
+
+    @app.post("/api/farms/{farm_id}/blocks/{block_id}/log", status_code=201)
+    def add_log(farm_id: str, block_id: str, entry: LogEntryIn) -> dict[str, Any]:
+        config = load(farm_id)
+        block = find_block(config, block_id)
+        if entry.date > config.today:
+            raise HTTPException(422, "Can't log irrigation for a future date")
+        if entry.date < block.planting_date:
+            raise HTTPException(422, "That date is before the block was planted")
+        rate = application_rate_mm_h(block)
+        gross = entry.gross_mm if entry.gross_mm is not None else entry.runtime_h * rate  # type: ignore[operator]
+        hours = entry.runtime_h if entry.runtime_h is not None else gross / rate
+        row = {
+            "logged_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "farm_id": farm_id,
+            "block_id": block_id,
+            "date": entry.date.isoformat(),
+            "gross_mm": f"{gross:.2f}",
+            "runtime_h": f"{hours:.3f}",
+            "note": entry.note.strip(),
+        }
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        new_file = not log_file.is_file()
+        with log_file.open("a", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=LOG_FIELDS)
+            if new_file:
+                writer.writeheader()
+            writer.writerow(row)
+        return row
+
+    @app.get("/api/farms/{farm_id}/log")
+    def farm_log(farm_id: str) -> list[dict[str, Any]]:
+        config = load(farm_id)
+        rows = read_log(farm_id)
+        if not rows:
+            return []
+        plans = {slug(block.name): days for block, days in block_plans(config, farm_id)}
+        out = []
+        for row in rows:
+            day = date.fromisoformat(row["date"])
+            planned = next((d for d in plans.get(row["block_id"], []) if d.date == day), None)
+            out.append(
+                {
+                    **row,
+                    "gross_mm": float(row["gross_mm"]),
+                    "runtime_h": float(row["runtime_h"]),
+                    "recommended_gross_mm": planned.gross_mm if planned else None,
+                    "recommended_runtime_h": planned.runtime_h if planned else None,
+                }
+            )
+        return sorted(out, key=lambda r: (r["date"], r["logged_at"]), reverse=True)
+
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")
+    return app
+
+
+def block_info(block: Block) -> dict[str, Any]:
+    crop = get_crop(block.crop)
+    soil = get_soil(block.soil_type)
+    system = load_systems().get(block.system)
+    params = block.system_params
+    return {
+        "id": slug(block.name),
+        "name": block.name,
+        "crop": block.crop,
+        "soil_type": block.soil_type,
+        "system": block.system,
+        "area_ha": block.area_ha,
+        "planting_date": block.planting_date,
+        "perennial": crop.perennial,
+        "efficiency": params.efficiency,
+        "application_rate_mm_h": application_rate_mm_h(block),
+        "max_runtime_h": params.max_runtime_h,
+        "unverified": [
+            name
+            for name, flag in (
+                ("crop", crop.verify),
+                ("soil", soil.verify),
+                ("system", system.verify if system else False),
+            )
+            if flag
+        ],
+    }
+
+
+app = create_app()

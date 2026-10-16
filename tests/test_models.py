@@ -73,9 +73,17 @@ def test_explicit_efficiency_is_kept() -> None:
     assert block.system_params.efficiency == pytest.approx(0.80)
 
 
-def test_micro_sprinkler_requires_an_efficiency() -> None:
-    with pytest.raises(ValidationError, match="efficiency is required"):
-        _block("micro_sprinkler", SystemParams(application_rate_mm_h=4.0))
+def test_micro_sprinkler_uses_catalog_defaults() -> None:
+    block = _block("micro_sprinkler", SystemParams(application_rate_mm_h=4.0))
+    assert block.system_params.efficiency == pytest.approx(0.85)
+    assert block.system_params.max_runtime_h == pytest.approx(8.0)
+
+
+def test_block_max_runtime_overrides_catalog() -> None:
+    block = _block("drip", SystemParams(
+        emitter_flow_lph=2.0, emitter_spacing_m=0.5, lateral_spacing_m=1.0, max_runtime_h=4.0,
+    ))
+    assert block.system_params.max_runtime_h == pytest.approx(4.0)
 
 
 def test_drip_requires_emitter_layout() -> None:

@@ -10,8 +10,8 @@ Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3
 - [x] Prompt 2: weather + CLI
 - [x] Prompt 3: sanity check → docs/SANITY.md (Claude reviews)
 - [ ] Dad call: confirm crop/soil values, Agrimatco system specs, 2–3 pilot farms → update engine/data
-- [ ] Prompt 4: minimal API (below)
-- [ ] UI: mobile farm page — today + 7-day plan, "Why?" button, pilot log form (Claude builds)
+- [x] Prompt 4: minimal API + continuous balance + runtime cap (built by Claude)
+- [x] UI: mobile farm page in web/ (AR/FR/EN, today + 7 days, soil-water column, explanation, pilot log)
 - [ ] "Why?" explanation: Claude explains today's numbers in AR/FR/EN (design with Claude)
 - [ ] Dry run on real pilot farm coordinates before flying (1 Nov 2026)
 
@@ -54,4 +54,7 @@ Enable CORS for localhost. Tests with FastAPI TestClient and mocked weather. Doc
 ```
 
 ## Open questions for Dad
-See the end of docs/SPEC.md.
+See the end of docs/SPEC.md and "Questions for agronomist" in docs/SANITY.md. Added since:
+- Longest set a farmer will run per system (max_runtime_h, now a guessed 8 h for drip / micro / sprinkler).
+- Citrus now refills over ~5 days of 8 h sets about once a month. Do coastal orchards really run like that, or every 2–4 days with smaller doses? (Answer sets citrus p / management depletion.)
+- Micro-sprinkler efficiency (0.85 guessed) and the real flow/spacing on coastal citrus.

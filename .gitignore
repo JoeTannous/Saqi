@@ -29,3 +29,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Pilot log (farm data)
+/data/
