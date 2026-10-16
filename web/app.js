@@ -3,6 +3,10 @@
 
 const T = {
   en: {
+    chatTitle: "Ask Saqi", chatHint: "Ask about today's advice, or tell Saqi what you irrigated and it will log it.",
+    send: "Send", thinking: "Thinking…", loggedNote: (rt, d) => `Logged: ${rt} on ${d}`,
+    chatError: "Saqi couldn't answer.",
+    chips: ["Why this amount today?", "I irrigated 2 hours today", "Is rain coming this week?"],
     farm: "Farm", loading: "Loading today's plan…", why: "How this was worked out",
     logOpen: "Log irrigation", date: "Date", howMuch: "How much did you run?",
     byTime: "Hours", byMm: "Millimetres", h: "h", min: "min", note: "Note (optional)",
@@ -34,6 +38,10 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   fr: {
+    chatTitle: "Demander à Saqi", chatHint: "Posez une question sur le conseil du jour, ou dites à Saqi ce que vous avez arrosé et il le notera.",
+    send: "Envoyer", thinking: "Réflexion…", loggedNote: (rt, d) => `Noté : ${rt} le ${d}`,
+    chatError: "Saqi n'a pas pu répondre.",
+    chips: ["Pourquoi cette quantité ?", "J'ai arrosé 2 h aujourd'hui", "Va-t-il pleuvoir cette semaine ?"],
     farm: "Ferme", loading: "Chargement du plan du jour…", why: "Comment c'est calculé",
     logOpen: "Noter une irrigation", date: "Date", howMuch: "Combien avez-vous irrigué ?",
     byTime: "Heures", byMm: "Millimètres", h: "h", min: "min", note: "Remarque (facultatif)",
@@ -65,6 +73,10 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   ar: {
+    chatTitle: "اسأل ساقي", chatHint: "اسأل عن توصية اليوم، أو أخبر ساقي كم سقيت وهو يسجّلها.",
+    send: "إرسال", thinking: "عم فكّر…", loggedNote: (rt, d) => `تم التسجيل: ${rt} بتاريخ ${d}`,
+    chatError: "ما قدر ساقي يجاوب.",
+    chips: ["ليش هالكمية اليوم؟", "سقيت ساعتين اليوم", "في شتي هالجمعة؟"],
     farm: "المزرعة", loading: "جارٍ تحميل خطة اليوم…", why: "كيف حُسبت هذه التوصية",
     logOpen: "سجّل الري", date: "التاريخ", howMuch: "كم شغّلت الري؟",
     byTime: "بالساعات", byMm: "بالمليمتر", h: "س", min: "د", note: "ملاحظة (اختياري)",
@@ -101,6 +113,8 @@ const LOCALES = { en: "en-GB", fr: "fr-FR", ar: "ar-LB-u-nu-latn" };
 let lang = pickLang();
 let farms = [];
 let current = null;
+let chatOn = false;
+const chats = {};
 const $ = (sel, root = document) => root.querySelector(sel);
 
 function pickLang() {
@@ -168,6 +182,10 @@ async function init() {
     if (current) render(current);
   }));
   try {
+    chatOn = (await api("/assistant")).enabled;
+  } catch (_) { chatOn = false; }
+  wireChat();
+  try {
     farms = await api("/farms");
   } catch (e) {
     setStatus(`${t().errLoad} ${e.message}`, true);
@@ -202,6 +220,7 @@ function render(plan) {
   main.innerHTML = "";
   plan.blocks.forEach((b) => main.append(renderBlock(plan, b)));
   const unverified = plan.blocks.some((b) => b.unverified.length);
+  renderChat();
   const cav = $("#caveat");
   cav.hidden = !unverified;
   cav.textContent = t().caveat;
@@ -354,6 +373,86 @@ function wireLog(node, plan, b) {
       err.textContent = `${L.errSave} ${e.message}`;
       err.hidden = false;
       btn.disabled = false;
+    }
+  });
+}
+
+function farmChat() {
+  const id = current && current.farm.id;
+  if (!id) return [];
+  if (!chats[id]) chats[id] = [];
+  return chats[id];
+}
+
+function renderChat() {
+  const box = $("#chat");
+  box.hidden = !chatOn || !current;
+  if (box.hidden) return;
+  const L = t();
+  box.querySelectorAll("[data-i18n]").forEach((el) => { const v = L[el.dataset.i18n]; if (typeof v === "string") el.textContent = v; });
+  const log = $("#chat-log");
+  log.innerHTML = "";
+  farmChat().forEach((m) => {
+    const li = document.createElement("li");
+    li.className = m.kind || m.role;
+    li.textContent = m.content;
+    log.append(li);
+  });
+  const chips = $("#chips");
+  chips.innerHTML = "";
+  if (!farmChat().some((m) => m.role === "user")) {
+    L.chips.forEach((c) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = c;
+      b.addEventListener("click", () => { const i = $("#chat-input"); i.value = c; i.focus(); });
+      chips.append(b);
+    });
+  }
+}
+
+function wireChat() {
+  const form = $("#chat-form");
+  const input = $("#chat-input");
+  input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight}px`; });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+  });
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const text = input.value.trim();
+    if (!text || !current) return;
+    const L = t();
+    const farmId = current.farm.id;
+    const thread = farmChat();
+    thread.push({ role: "user", content: text });
+    input.value = "";
+    input.style.height = "auto";
+    renderChat();
+    const typing = document.createElement("li");
+    typing.className = "assistant typing";
+    typing.textContent = L.thinking;
+    $("#chat-log").append(typing);
+    const send = form.querySelector(".send");
+    send.disabled = true;
+    try {
+      const history = thread.filter((m) => !m.kind).map(({ role, content }) => ({ role, content })).slice(-20);
+      const res = await api(`/farms/${encodeURIComponent(farmId)}/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history, lang }),
+      });
+      thread.push({ role: "assistant", content: res.reply });
+      (res.logged || []).forEach((row) => {
+        thread.push({ role: "assistant", kind: "logged", content: L.loggedNote(hm(Number(row.runtime_h)), dayLabel(row.date)) });
+      });
+      if ((res.logged || []).length) await load(farmId);
+    } catch (e) {
+      thread.push({ role: "assistant", kind: "error", content: `${L.chatError} ${e.message}` });
+    } finally {
+      send.disabled = false;
+      renderChat();
+      const last = $("#chat-log").lastElementChild;
+      if (last) last.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   });
 }

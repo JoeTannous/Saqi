@@ -9,7 +9,7 @@ Every number shown to a farmer must come from deterministic, unit-tested code in
 
 ## Stack
 - `engine/` — pure Python 3.11+ package, no web deps. FAO-56 water balance. Fully unit-tested (pytest).
-- `api/` — FastAPI wrapping the engine. Serves `web/` at `/` and JSON under `/api`.
+- `api/` — FastAPI wrapping the engine. Serves `web/` at `/` and JSON under `/api`. `api/assistant.py` is the Claude layer: system prompt + tools; Claude reads numbers only via tools.
 - `web/` — plain HTML/CSS/JS, no build step (trip MVP). Formats API numbers only; never computes irrigation values. AR/FR/EN, Arabic is RTL.
 - DB/auth: Supabase (phase 2+). Weather: Open-Meteo (no key). LLM: Claude API with tool use (phase 3).
 

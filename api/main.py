@@ -7,11 +7,12 @@ Run: uvicorn api.main:app --reload   then open http://127.0.0.1:8000
 """
 
 import csv
+import os
 import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import yaml
@@ -20,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
+from api.assistant import FarmTools, compact_day, make_client, run_chat, system_prompt
 from engine.balance import application_rate_mm_h
 from engine.catalog import get_crop, get_soil, load_systems
 from engine.cli import FarmConfig, farm_today, load_farm
@@ -31,6 +33,28 @@ ROOT = Path(__file__).resolve().parent.parent
 WeatherFn = Callable[[Farm, date, date], list[DailyInput]]
 LOG_FIELDS = ["logged_at", "farm_id", "block_id", "date", "gross_mm", "runtime_h", "note"]
 PAST_DAYS = 7
+
+
+def load_dotenv(path: Path) -> None:
+    """Minimal .env reader (KEY=value lines). Real environment variables win."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=2000)
+
+
+class ChatIn(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=30)
+    lang: Literal["ar", "fr", "en"] = "en"
 
 
 class LogEntryIn(BaseModel):
@@ -73,12 +97,16 @@ def create_app(
     weather: WeatherFn | None = None,
     today_fn: Callable[[str], date] | None = None,
     web_dir: Path | None = None,
+    chat_client: Any = "auto",
 ) -> FastAPI:
     farms_root = farms_dir or default_farms_dir()
     log_file = log_path or ROOT / "data" / "pilot_log.csv"
     get_weather = weather or open_meteo_weather(ROOT / ".cache")
     local_today = today_fn or farm_today
     static_dir = web_dir if web_dir is not None else ROOT / "web"
+    if chat_client == "auto":
+        load_dotenv(ROOT / ".env")
+        chat_client = make_client()
 
     app = FastAPI(title="Saqi", version="0.1.0")
     app.add_middleware(
@@ -185,17 +213,20 @@ def create_app(
             "blocks": blocks_out,
         }
 
-    @app.post("/api/farms/{farm_id}/blocks/{block_id}/log", status_code=201)
-    def add_log(farm_id: str, block_id: str, entry: LogEntryIn) -> dict[str, Any]:
-        config = load(farm_id)
+    def write_log(config: FarmConfig, farm_id: str, block_id: str, entry: LogEntryIn) -> dict:
         block = find_block(config, block_id)
         if entry.date > config.today:
             raise HTTPException(422, "Can't log irrigation for a future date")
         if entry.date < block.planting_date:
             raise HTTPException(422, "That date is before the block was planted")
         rate = application_rate_mm_h(block)
-        gross = entry.gross_mm if entry.gross_mm is not None else entry.runtime_h * rate  # type: ignore[operator]
-        hours = entry.runtime_h if entry.runtime_h is not None else gross / rate
+        if entry.gross_mm is not None:
+            gross = entry.gross_mm
+            hours = gross / rate
+        else:
+            assert entry.runtime_h is not None
+            hours = entry.runtime_h
+            gross = hours * rate
         row = {
             "logged_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "farm_id": farm_id,
@@ -213,6 +244,79 @@ def create_app(
                 writer.writeheader()
             writer.writerow(row)
         return row
+
+    @app.post("/api/farms/{farm_id}/blocks/{block_id}/log", status_code=201)
+    def add_log(farm_id: str, block_id: str, entry: LogEntryIn) -> dict[str, Any]:
+        return write_log(load(farm_id), farm_id, block_id, entry)
+
+    def farm_tools(config: FarmConfig, farm_id: str) -> FarmTools:
+        def days_for(block_id: str) -> tuple[Block, list[PlanDay]]:
+            for block, days in block_plans(config, farm_id):
+                if slug(block.name) == block_id:
+                    return block, days
+            raise HTTPException(404, f"No block called {block_id!r}")
+
+        def get_plan(block_id: str) -> dict[str, Any]:
+            block, days = days_for(block_id)
+            today = config.today
+            info = block_info(block)
+            return {
+                "block": {k: info[k] for k in ("id", "name", "crop", "soil_type", "system",
+                                                "max_runtime_h", "unverified")},
+                "today": next(compact_day(d) for d in days if d.date == today),
+                "past_7_days": [
+                    compact_day(d) for d in days
+                    if today - timedelta(days=PAST_DAYS) <= d.date < today
+                ],
+                "next_days": [compact_day(d) for d in days if d.date > today],
+                "note": "Past days without a log are assumed to have followed the plan.",
+            }
+
+        def get_history(block_id: str, n: int) -> dict[str, Any]:
+            _, days = days_for(block_id)
+            start = config.today - timedelta(days=n)
+            return {
+                "days": [compact_day(d) for d in days if start <= d.date <= config.today],
+            }
+
+        def log_irrigation(args: dict[str, Any]) -> dict[str, Any]:
+            entry = LogEntryIn(
+                date=args["date"],
+                runtime_h=args.get("runtime_h"),
+                gross_mm=args.get("gross_mm"),
+                note=str(args.get("note", ""))[:500],
+            )
+            return write_log(config, farm_id, str(args["block_id"]), entry)
+
+        return FarmTools(get_plan=get_plan, get_history=get_history,
+                         log_irrigation=log_irrigation)
+
+    @app.get("/api/assistant")
+    def assistant_status() -> dict[str, Any]:
+        return {"enabled": chat_client is not None}
+
+    @app.post("/api/farms/{farm_id}/chat")
+    def chat(farm_id: str, body: ChatIn) -> dict[str, Any]:
+        if chat_client is None:
+            raise HTTPException(503, "Chat is off: set ANTHROPIC_API_KEY in .env")
+        if body.messages[-1].role != "user":
+            raise HTTPException(422, "The last message must be from the user")
+        config = load(farm_id)
+        farm_info = {"id": farm_id, "name": config.farm.name}
+        system = system_prompt(farm_info, [block_info(b) for b in config.blocks],
+                               config.today, body.lang)
+        try:
+            result = run_chat(
+                chat_client,
+                farm_tools(config, farm_id),
+                system,
+                [m.model_dump() for m in body.messages],
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:  # anthropic.APIError and network errors
+            raise HTTPException(502, f"The assistant is unavailable: {exc}") from exc
+        return {"reply": result.reply, "logged": result.logged, "tool_calls": result.tool_calls}
 
     @app.get("/api/farms/{farm_id}/log")
     def farm_log(farm_id: str) -> list[dict[str, Any]]:

@@ -12,7 +12,9 @@ Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3
 - [ ] Dad call: confirm crop/soil values, Agrimatco system specs, 2–3 pilot farms → update engine/data
 - [x] Prompt 4: minimal API + continuous balance + runtime cap (built by Claude)
 - [x] UI: mobile farm page in web/ (AR/FR/EN, today + 7 days, soil-water column, explanation, pilot log)
-- [ ] "Why?" explanation: Claude explains today's numbers in AR/FR/EN (design with Claude)
+- [x] Claude layer: farm chat in AR/FR/EN with engine tools (get_plan, get_history, log_irrigation); offline fixed-text explanation stays as fallback
+- [ ] Test the chat with a real API key: Lebanese-dialect questions, "سقيت ساعتين" logging, out-of-scope questions (pests), trick questions ("roughly how much next month?")
+- [ ] Deploy (Railway/Fly) so the page works on a phone in Lebanon
 - [ ] Dry run on real pilot farm coordinates before flying (1 Nov 2026)
 
 ## Trip MVP scope (before 1 Nov 2026)
@@ -21,7 +23,7 @@ Out until after the trip: Supabase/auth, full chat, WhatsApp automation (forward
 
 ## Later
 - [ ] Supabase + auth + daily scheduled job
-- [ ] Full Claude chat with tool use (get_recommendation, get_block_history, log_irrigation)
+- [ ] Chat: what-if tool ("what if I skip today?") computed by the engine
 - [ ] WhatsApp daily message + "done 2h" logging
 - [ ] Sentinel-2 NDVI, soil sensors, deficit irrigation
 

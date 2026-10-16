@@ -106,6 +106,18 @@
     </section>
   </template>
 
+  <section class="chat" id="chat" hidden>
+    <h2 class="chat-title" data-i18n="chatTitle">Ask Saqi</h2>
+    <p class="chat-hint" data-i18n="chatHint">Ask about today's advice, or tell Saqi what you irrigated and it will log it.</p>
+    <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+    <div class="chips" id="chips"></div>
+    <form class="chat-form" id="chat-form">
+      <label class="sr" for="chat-input" data-i18n="chatTitle">Ask Saqi</label>
+      <textarea id="chat-input" rows="1" maxlength="2000" required></textarea>
+      <button type="submit" class="send" data-i18n="send">Send</button>
+    </form>
+  </section>
+
   <footer class="foot">
     <p id="caveat" hidden></p>
   </footer>

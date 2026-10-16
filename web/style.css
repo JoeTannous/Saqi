@@ -220,6 +220,57 @@ details[open] > summary::after { content: "−"; }
 .past td.assumed { color: var(--muted); }
 .past-note { font-size: 0.85rem; color: var(--muted); margin: 8px 0 14px; }
 
+.chat {
+  max-width: 600px;
+  margin: 14px auto 0;
+  padding: 0 16px 20px;
+}
+.chat-title { font-size: 1.05rem; margin: 10px 0 2px; }
+.chat-hint { margin: 0 0 12px; color: var(--muted); font-size: 0.92rem; }
+.chat-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.chat-log li {
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-log li.user { align-self: flex-end; background: var(--ink); color: var(--surface); border-end-end-radius: 4px; }
+.chat-log li.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-end-start-radius: 4px; }
+.chat-log li.logged { align-self: flex-start; background: none; color: var(--ok); font-size: 0.88rem; font-weight: 600; padding: 0 4px; }
+.chat-log li.error { align-self: flex-start; color: var(--danger); background: none; padding: 0 4px; }
+.chat-log li.typing { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.chips button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.chat-form { display: flex; gap: 8px; align-items: flex-end; }
+.chat-form textarea {
+  flex: 1;
+  resize: none;
+  min-height: 46px;
+  max-height: 140px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.send {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: var(--water);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.send:disabled { opacity: 0.5; cursor: default; }
+
 .foot { max-width: 600px; margin: 0 auto; padding: 0 16px 32px; }
 .foot p { font-size: 0.85rem; color: var(--muted); margin: 0; }
 

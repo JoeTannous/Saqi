@@ -49,6 +49,7 @@ def client(tmp_path: Path) -> TestClient:
         weather=fake_weather,
         today_fn=lambda tz: TODAY,
         web_dir=tmp_path / "no-web",
+        chat_client=None,
     )
     return TestClient(app)
 
@@ -133,7 +134,7 @@ def test_web_page_is_served(tmp_path: Path) -> None:
     web.mkdir()
     (web / "index.html").write_text("<title>Saqi</title>", encoding="utf-8")
     app = create_app(farms_dir=tmp_path, log_path=tmp_path / "l.csv", weather=fake_weather,
-                     today_fn=lambda tz: TODAY, web_dir=web)
+                     today_fn=lambda tz: TODAY, web_dir=web, chat_client=None)
     res = TestClient(app).get("/")
     assert res.status_code == 200
     assert "Saqi" in res.text
