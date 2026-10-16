@@ -8,7 +8,7 @@ Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3
 - [x] Spec + AGENTS.md
 - [x] Prompt 1: engine core (FAO-56 water balance, tests) — maths reviewed by Claude
 - [x] Prompt 2: weather + CLI
-- [ ] Prompt 3: sanity check → docs/SANITY.md (Claude reviews)
+- [x] Prompt 3: sanity check → docs/SANITY.md (Claude reviews)
 - [ ] Dad call: confirm crop/soil values, Agrimatco system specs, 2–3 pilot farms → update engine/data
 - [ ] Prompt 4: minimal API (below)
 - [ ] UI: mobile farm page — today + 7-day plan, "Why?" button, pilot log form (Claude builds)
@@ -46,8 +46,9 @@ Read AGENTS.md and docs/SPEC.md. engine/ and the CLI exist and are tested.
 Add api/ with FastAPI (add fastapi + uvicorn to pyproject). No database: farms load from examples/*.yaml (or farms/*.yaml if present).
 Endpoints:
 - GET /farms -> list of farms (id = yaml file stem, name, lat, lon, blocks summary).
-- GET /farms/{farm_id}/plan -> for each block: today's DailyResult plus 7-day forecast and 7 past days, using the same code path as the CLI. Include all reason fields (et0, kc, etc, peff, dr, raw, taw) so the UI and LLM never compute numbers.
-- POST /farms/{farm_id}/blocks/{block}/log {date, irrigated_mm or runtime_h, note} -> append to data/pilot_log.csv (create if missing; gitignore data/). Feed logged irrigation back into the balance as irrigation_applied_mm on that date.
+- GET /farms/{farm_id}/plan -> for each block: today's DailyResult plus 7-day forecast and 7 past days. Run ONE continuous balance: archive weather from planting_date (perennials: season start, max 365 days back) through yesterday, then forecast today..today+6, starting Dr=0 at the first day. Today's recommendation must come from that full history, not a 7-day window. Put this in engine/ (e.g. engine/plan.py) and make the CLI use it too, so CLI and API share one code path.
+- For past days: if a pilot log entry exists, use the logged irrigation as irrigation_applied_mm; otherwise assume the recommendation was followed (current simulate_plan behaviour). Return a flag per day saying which. Include all reason fields (et0, kc, etc, peff, dr, raw, taw) so the UI and LLM never compute numbers.
+- POST /farms/{farm_id}/blocks/{block}/log {date, irrigated_mm or runtime_h, note} -> append to data/pilot_log.csv (create if missing; gitignore data/). Logged irrigation feeds back into the balance via the rule above.
 - GET /farms/{farm_id}/log -> logged entries with the recommendation made for that day alongside (planned vs actual).
 Enable CORS for localhost. Tests with FastAPI TestClient and mocked weather. Document the run command in README.md. Follow the definition of done in AGENTS.md.
 ```
