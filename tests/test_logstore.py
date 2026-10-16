@@ -43,7 +43,7 @@ class FakeConn:
     def execute(self, sql: str, params: tuple[object, ...] = ()) -> "FakeConn":
         self.db.sql.append(sql)
         kind = sql.lstrip().split(None, 1)[0].upper()
-        if kind == "CREATE":
+        if kind in ("CREATE", "ALTER"):
             return self
         if kind == "INSERT":
             self.db.rows.append(tuple(params))
@@ -77,7 +77,7 @@ def test_postgres_store_roundtrip_on_a_fake_connection() -> None:
     db = FakeDB()
     store = PostgresLogStore("postgresql://example.invalid/saqi", connect=lambda: FakeConn(db))
     store.ensure_schema()
-    schema = " ".join(" ".join(CREATE_SQL.split()).split()).lower()
+    schema = " ".join(CREATE_SQL.replace(";", " ").split()).lower()
     recorded = " ".join(" ".join(sql.split()) for sql in db.sql).lower()
     assert schema in recorded
     for column in (
@@ -135,3 +135,12 @@ def test_api_log_through_the_postgres_store(tmp_path: Path) -> None:
     assert log[0]["date"] == yesterday
     assert "recommended_gross_mm" in log[0]
     assert "id" not in log[0]
+
+
+def test_schema_enables_row_level_security() -> None:
+    # Blocks Supabase's public REST API from reading or writing the pilot log.
+    from api.logstore import CREATE_SQL
+
+    statements = [s.strip() for s in CREATE_SQL.split(";") if s.strip()]
+    assert statements[0].startswith("CREATE TABLE IF NOT EXISTS pilot_log")
+    assert statements[1] == "ALTER TABLE pilot_log ENABLE ROW LEVEL SECURITY"

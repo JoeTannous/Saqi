@@ -12,6 +12,8 @@ from typing import Any, Protocol
 
 LOG_FIELDS = ["logged_at", "farm_id", "block_id", "date", "gross_mm", "runtime_h", "note"]
 
+# Supabase exposes public tables through its REST API. RLS with no policies blocks
+# that route. Saqi connects directly as the table owner, so it is not affected.
 CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS pilot_log (
     id serial PRIMARY KEY,
@@ -22,7 +24,8 @@ CREATE TABLE IF NOT EXISTS pilot_log (
     gross_mm real NOT NULL,
     runtime_h real NOT NULL,
     note text NOT NULL DEFAULT ''
-)
+);
+ALTER TABLE pilot_log ENABLE ROW LEVEL SECURITY;
 """
 
 INSERT_SQL = """
@@ -90,7 +93,9 @@ class PostgresLogStore:
         if self._ready:
             return
         with self._connect() as conn:
-            conn.execute(CREATE_SQL)
+            for statement in CREATE_SQL.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
         self._ready = True
 
     def read(self, farm_id: str) -> list[dict[str, str]]:
