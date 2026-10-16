@@ -182,3 +182,106 @@ def test_make_client_defaults_to_anthropic(monkeypatch: pytest.MonkeyPatch) -> N
     client = make_client()
     assert client is not None
     assert type(client).__module__.startswith("anthropic")
+
+
+def test_busy_model_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api import assistant
+
+    class Busy(Exception):
+        status_code = 503
+
+    calls: list[str] = []
+
+    class Completions:
+        def create(self, model: str, **kwargs: object) -> object:
+            calls.append(model)
+            if model == "main":
+                raise Busy()
+            return "ok"
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setenv("SAQI_FALLBACK_MODEL", "backup")
+    monkeypatch.setattr(assistant, "RETRY_DELAYS_S", (0.0,))
+    assert assistant._create_with_fallback(client, "main") == "ok"
+    assert calls == ["main", "backup"]
+
+
+def test_all_busy_raises_assistant_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api import assistant
+
+    class Busy(Exception):
+        status_code = 429
+
+    class Completions:
+        def create(self, model: str, **kwargs: object) -> object:
+            raise Busy()
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.delenv("SAQI_FALLBACK_MODEL", raising=False)
+    monkeypatch.setattr(assistant, "RETRY_DELAYS_S", (0.0,))
+    with pytest.raises(assistant.AssistantBusy):
+        assistant._create_with_fallback(client, "main")
+
+
+def test_missing_fallback_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api import assistant
+
+    class Err(Exception):
+        def __init__(self, code: int) -> None:
+            self.status_code = code
+
+    calls: list[str] = []
+
+    class Completions:
+        def create(self, model: str, **kwargs: object) -> object:
+            calls.append(model)
+            if model == "main":
+                raise Err(503)
+            if model == "gone":
+                raise Err(404)
+            return "ok"
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setenv("SAQI_FALLBACK_MODEL", "gone, backup")
+    monkeypatch.setattr(assistant, "RETRY_DELAYS_S", (0.0,))
+    assert assistant._create_with_fallback(client, "main") == "ok"
+    assert calls == ["main", "gone", "backup"]
+
+
+def test_thought_signature_is_sent_back() -> None:
+    from api.assistant import _openai_assistant_message
+
+    sig = {"google": {"thought_signature": "abc123"}}
+    call = SimpleNamespace(
+        id="c1",
+        type="function",
+        function=SimpleNamespace(name="get_plan", arguments='{"block_id": "block-1"}'),
+        extra_content=sig,
+    )
+    message = SimpleNamespace(content=None, tool_calls=[call])
+    out = _openai_assistant_message(message, [call])
+    assert out["tool_calls"][0]["extra_content"] == sig
+    assert out["tool_calls"][0]["function"]["arguments"] == '{"block_id": "block-1"}'
+
+
+def test_sdk_extra_fields_are_preserved() -> None:
+    from openai.types.chat import ChatCompletionMessage
+
+    message = ChatCompletionMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "get_plan", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "sig"}},
+                }
+            ],
+        }
+    )
+    from api.assistant import _openai_assistant_message
+
+    out = _openai_assistant_message(message, list(message.tool_calls or []))
+    assert out["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": "sig"}}

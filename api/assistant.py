@@ -8,6 +8,7 @@ Otherwise this talks to Anthropic, unchanged.
 
 import json
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -136,12 +137,17 @@ Rules:
    compute a new irrigation amount yourself, even if asked "roughly". If a tool doesn't give the
    number, say Saqi doesn't calculate that yet.
 2. Call get_plan before answering any question about today or the coming days.
-3. Use runtime_text from tool results when giving durations. Round mm to one decimal.
+3. Give durations as "X h Y min" using runtime_text or logged_runtime_text from tool results
+   (never "2.0 hours"). Round mm to one decimal.
 4. When the farmer reports irrigation already done ("I ran 2 hours", "سقيت ساعتين", "j'ai arrosé
    3 h hier"), call log_irrigation. If the block, date or amount is unclear, ask one short
    question first. If the farm has one block, use it. "Today" and "yesterday" are relative to the
-   farm date above. After logging, confirm what was recorded and give the updated advice from
-   get_plan.
+   farm date above. Call get_plan only after log_irrigation has returned, never in the same
+   step. After logging, confirm what was recorded and give the updated advice from
+   get_plan. Compare what they applied with what that day's plan recommended: if they watered
+   on a day with no recommendation, or clearly more or less than recommended, say so kindly in
+   one sentence (extra water is wasted water and energy; too little means irrigating sooner) and
+   say when the next irrigation is now due.
 5. If the farmer reports something the engine can't see (a broken pump, a different rain gauge
    reading, wet or dry soil by hand, wilting), don't change the numbers. Say what the plan
    assumes, suggest they trust what they see in the field, and log any irrigation they did.
@@ -206,20 +212,20 @@ def run_chat(
             result.reply = "".join(b["text"] for b in content if b["type"] == "text").strip()
             return result
 
-        tool_results = []
-        for block in content:
-            if block["type"] != "tool_use":
-                continue
+        uses = [b for b in content if b["type"] == "tool_use"]
+        outputs: dict[str, tuple[dict[str, Any], bool]] = {}
+        for block in writes_first(uses, key=lambda b: b["name"]):
             result.tool_calls.append(block["name"])
-            output, is_error = _run_tool(tools, block["name"], block["input"], result)
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block["id"],
-                    "content": json.dumps(output, ensure_ascii=False, default=str),
-                    "is_error": is_error,
-                }
-            )
+            outputs[block["id"]] = _run_tool(tools, block["name"], block["input"], result)
+        tool_results = [
+            {
+                "type": "tool_result",
+                "tool_use_id": block["id"],
+                "content": json.dumps(outputs[block["id"]][0], ensure_ascii=False, default=str),
+                "is_error": outputs[block["id"]][1],
+            }
+            for block in uses
+        ]
         messages.append({"role": "user", "content": tool_results})
 
     result.reply = "Sorry, that took too many steps. Please ask again more simply."
@@ -251,8 +257,9 @@ def _run_openai_chat(
     use_model = model or os.environ.get("SAQI_MODEL", DEFAULT_OPENAI_MODEL)
 
     for _ in range(MAX_TOOL_ROUNDS + 1):
-        response = client.chat.completions.create(
-            model=use_model,
+        response = _create_with_fallback(
+            client,
+            use_model,
             max_tokens=MAX_TOKENS,
             messages=messages,
             tools=to_openai_tools(),
@@ -265,15 +272,17 @@ def _run_openai_chat(
             result.reply = message.content.strip() if isinstance(message.content, str) else ""
             return result
 
-        for call in calls:
+        outputs_o: dict[str, dict[str, Any]] = {}
+        for call in writes_first(calls, key=lambda c: str(c.function.name)):
             name = str(call.function.name)
             result.tool_calls.append(name)
-            output = _openai_tool_output(tools, name, call.function.arguments, result)
+            outputs_o[call.id] = _openai_tool_output(tools, name, call.function.arguments, result)
+        for call in calls:
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": json.dumps(output, ensure_ascii=False, default=str),
+                    "content": json.dumps(outputs_o[call.id], ensure_ascii=False, default=str),
                 }
             )
 
@@ -281,22 +290,82 @@ def _run_openai_chat(
     return result
 
 
+RETRY_DELAYS_S = (1.5, 4.0)
+
+
+def _is_busy(exc: Exception) -> bool:
+    """429 / 5xx from the provider: overloaded or rate-limited, worth retrying."""
+    status = getattr(exc, "status_code", None)
+    return isinstance(status, int) and (status == 429 or status >= 500)
+
+
+def _create_with_fallback(client: Any, model: str, **kwargs: Any) -> Any:
+    """Retry a busy model briefly, then the fallbacks in SAQI_FALLBACK_MODEL (comma-separated).
+
+    A fallback that doesn't exist for this account (404) is skipped, not fatal.
+    """
+    raw = os.environ.get("SAQI_FALLBACK_MODEL", "")
+    fallbacks = [m.strip() for m in raw.split(",") if m.strip() and m.strip() != model]
+    models = [model, *fallbacks]
+    last: Exception | None = None
+    for delay in (0.0, *RETRY_DELAYS_S):
+        if delay:
+            time.sleep(delay)
+        for name in list(models):
+            try:
+                return client.chat.completions.create(model=name, **kwargs)
+            except Exception as exc:  # provider SDK errors
+                status = getattr(exc, "status_code", None)
+                if name != model and status == 404:
+                    models.remove(name)
+                    continue
+                if not _is_busy(exc):
+                    raise
+                last = exc
+    raise AssistantBusy() from last
+
+
+class AssistantBusy(Exception):
+    """Every model we tried is overloaded or rate-limited right now."""
+
+
 def _openai_assistant_message(message: Any, calls: list[Any]) -> dict[str, Any]:
+    """Echo the assistant turn back exactly, including provider extras.
+
+    Gemini 3 puts a thought signature on each tool call
+    (extra_content.google.thought_signature) and rejects the next request if it
+    is missing, so tool calls are copied as returned, not rebuilt.
+    """
     content = message.content if isinstance(message.content, str) else None
     out: dict[str, Any] = {"role": "assistant", "content": content}
+    extra = _extras(message, {"role", "content", "tool_calls", "refusal", "audio",
+                              "function_call", "annotations"})
+    out.update(extra)
     if not calls:
         return out
-    out["tool_calls"] = [
-        {
-            "id": call.id,
-            "type": getattr(call, "type", None) or "function",
-            "function": {
-                "name": call.function.name,
-                "arguments": _arguments_text(call.function.arguments),
-            },
-        }
-        for call in calls
-    ]
+    out["tool_calls"] = [_tool_call_dict(call) for call in calls]
+    return out
+
+
+def _extras(obj: Any, known: set[str]) -> dict[str, Any]:
+    """Fields the SDK kept but doesn't model (pydantic extra), e.g. extra_content."""
+    extra = getattr(obj, "model_extra", None)
+    if isinstance(extra, dict):
+        return {k: v for k, v in extra.items() if k not in known and v is not None}
+    value = getattr(obj, "extra_content", None)
+    return {"extra_content": value} if value is not None else {}
+
+
+def _tool_call_dict(call: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "id": call.id,
+        "type": getattr(call, "type", None) or "function",
+        "function": {
+            "name": call.function.name,
+            "arguments": _arguments_text(call.function.arguments),
+        },
+    }
+    out.update(_extras(call, {"id", "type", "function", "index"}))
     return out
 
 
@@ -328,6 +397,14 @@ def _openai_tool_output(
     return output
 
 
+WRITE_TOOLS = {"log_irrigation"}
+
+
+def writes_first(items: list[Any], key: Callable[[Any], str]) -> list[Any]:
+    """Run logging before reads in the same step, so a plan read sees the new log."""
+    return sorted(items, key=lambda item: key(item) not in WRITE_TOOLS)
+
+
 def _run_tool(
     tools: FarmTools, name: str, args: dict[str, Any], result: ChatResult
 ) -> tuple[dict[str, Any], bool]:
@@ -340,7 +417,8 @@ def _run_tool(
         if name == "log_irrigation":
             row = tools.log_irrigation(args)
             result.logged.append(row)
-            return {"logged": row}, False
+            hours = float(row.get("runtime_h", 0) or 0)
+            return {"logged": row, "runtime_text": runtime_text(hours)}, False
         return {"error": f"unknown tool {name}"}, True
     except (KeyError, ValueError, TypeError) as exc:
         return {"error": str(exc)}, True
@@ -391,9 +469,12 @@ def compact_day(day: Any) -> dict[str, Any]:
         out["capped_to_max_runtime"] = True
     if day.observed:
         out["applied"] = day.applied_source
-        if day.logged_gross_mm is not None:
-            out["logged_gross_mm"] = round(day.logged_gross_mm, 1)
-            out["logged_runtime_text"] = runtime_text(day.logged_runtime_h or 0.0)
+    if day.logged_gross_mm is not None:
+        # Logged days (today included): what the farmer did vs. the recommendation above.
+        out["applied"] = "logged"
+        out["logged_gross_mm"] = round(day.logged_gross_mm, 1)
+        out["logged_runtime_text"] = runtime_text(day.logged_runtime_h or 0.0)
+        out["depletion_after_logged_mm"] = round(day.dr_end_mm, 1)
     return out
 
 

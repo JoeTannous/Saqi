@@ -395,6 +395,7 @@ function renderChat() {
   farmChat().forEach((m) => {
     const li = document.createElement("li");
     li.className = m.kind || m.role;
+    li.dir = "auto";
     li.textContent = m.content;
     log.append(li);
   });

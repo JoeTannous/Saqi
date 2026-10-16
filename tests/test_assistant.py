@@ -140,3 +140,43 @@ def test_runtime_text_rounds_to_five_minutes() -> None:
     assert runtime_text(0.5) == "30 min"
 
 
+
+
+def test_today_log_is_visible_to_the_model(tmp_path: Path) -> None:
+    client, fake, _ = make(tmp_path, [
+        reply(tool("t1", "log_irrigation",
+                   {"block_id": "block-1", "date": TODAY.isoformat(), "runtime_h": 2}),
+              stop="tool_use"),
+        reply(tool("t2", "get_plan", {"block_id": "block-1"}), stop="tool_use"),
+        reply(text("ok")),
+    ])
+    client.post("/api/farms/test/chat", json={"messages": [{"role": "user", "content": "2h"}]})
+    log_result = json.loads(fake.messages.calls[1]["messages"][-1]["content"][0]["content"])
+    assert log_result["runtime_text"] == "2 h"
+    plan = json.loads(fake.messages.calls[2]["messages"][-1]["content"][0]["content"])
+    today = plan["today"]
+    assert today["applied"] == "logged"
+    assert today["logged_runtime_text"] == "2 h"
+    assert "depletion_after_logged_mm" in today
+
+
+def test_log_runs_before_plan_in_the_same_step(tmp_path: Path) -> None:
+    # Model asks for the plan and the log together, plan first. The plan must still see the log.
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    client, fake, _ = make(tmp_path, [
+        reply(
+            tool("p", "get_plan", {"block_id": "block-1"}),
+            tool("l", "log_irrigation", {"block_id": "block-1", "date": yesterday, "runtime_h": 3}),
+            stop="tool_use",
+        ),
+        reply(text("ok")),
+    ])
+    body = client.post("/api/farms/test/chat",
+                       json={"messages": [{"role": "user", "content": "3h yesterday"}]}).json()
+    assert body["tool_calls"] == ["log_irrigation", "get_plan"]
+    results = fake.messages.calls[1]["messages"][-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ["p", "l"]  # original order kept
+    plan = json.loads(results[0]["content"])
+    day = next(d for d in plan["past_7_days"] if d["date"] == yesterday)
+    assert day["applied"] == "logged"
+    assert day["logged_runtime_text"] == "3 h"

@@ -21,7 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
-from api.assistant import FarmTools, compact_day, make_client, run_chat, system_prompt
+from api.assistant import (
+    FarmTools,
+    compact_day,
+    make_client,
+    run_chat,
+    system_prompt,
+)
 from engine.balance import application_rate_mm_h
 from engine.catalog import get_crop, get_soil, load_systems
 from engine.cli import FarmConfig, farm_today, load_farm
