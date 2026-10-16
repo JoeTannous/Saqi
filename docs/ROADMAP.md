@@ -7,7 +7,7 @@ Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3
 ## Status
 - [x] Spec + AGENTS.md
 - [x] Prompt 1: engine core (FAO-56 water balance, tests) — maths reviewed by Claude
-- [ ] Prompt 2: weather + CLI
+- [x] Prompt 2: weather + CLI
 - [ ] Prompt 3: sanity check → docs/SANITY.md (Claude reviews)
 - [ ] Dad call: confirm crop/soil values, Agrimatco system specs, 2–3 pilot farms → update engine/data
 - [ ] Prompt 4: minimal API (below)

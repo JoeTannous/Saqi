@@ -1,0 +1,25 @@
+# Example orchard near Damour. Coordinates are the town, not a surveyed block.
+# Citrus Kc in engine/data/crops.yaml is already the FAO-56 70% canopy with no
+# cover crop, so kr stays at 1.0. Season start is 1 January (FAO-56 Table 11,
+# Mediterranean). Soil, efficiency, and the application rate are assumptions:
+# micro-sprinkler has no efficiency in engine/data/systems.yaml; 0.85 sits
+# between drip (0.90) and sprinkler (0.75). 2.8 mm/h is one 70 L/h
+# micro-sprinkler on a 5 m by 5 m tree (70 / 25). Confirm both with an
+# irrigation specialist. owner_whatsapp is a placeholder.
+
+name: Damour citrus
+owner_whatsapp: "+96170000001"
+lat: 33.73
+lon: 35.45
+timezone: Asia/Beirut
+blocks:
+  - farm_id: damour-citrus
+    name: Block 1
+    area_ha: 2.0
+    crop: citrus
+    planting_date: "2026-01-01"
+    soil_type: sandy_loam
+    system: micro_sprinkler
+    system_params:
+      efficiency: 0.85
+      application_rate_mm_h: 2.8

@@ -1,0 +1,22 @@
+# Example farm near Zahle. Not a surveyed field.
+# planting_days_ago is resolved in the farm timezone when the CLI loads this file.
+# Emitter layout is the one named for this example. Efficiency comes from
+# engine/data/systems.yaml (0.90). owner_whatsapp is a placeholder.
+
+name: Zahle potato
+owner_whatsapp: "+96170000000"
+lat: 33.85
+lon: 35.90
+timezone: Asia/Beirut
+blocks:
+  - farm_id: zahle-potato
+    name: Block 1
+    area_ha: 1.0
+    crop: potato
+    planting_days_ago: 60
+    soil_type: loam
+    system: drip
+    system_params:
+      emitter_flow_lph: 1.6
+      emitter_spacing_m: 0.3
+      lateral_spacing_m: 0.9
