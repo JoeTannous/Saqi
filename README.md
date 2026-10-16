@@ -77,3 +77,17 @@ python -m engine.cli --farm examples/bekaa_potato.yaml [--backfill-from YYYY-MM-
 pytest
 ruff check .
 ```
+
+### Weather sync (needed on Render)
+
+Open-Meteo limits requests per IP, and Render's free tier shares IPs with other apps,
+so the deployed app reads weather from the `weather_daily` table instead of calling
+Open-Meteo directly. A GitHub Action (`.github/workflows/sync-weather.yml`) fills it
+every 3 hours:
+
+1. GitHub repo → Settings → Secrets and variables → Actions → New repository secret:
+   `DATABASE_URL`, same value as on Render.
+2. Actions → Sync weather → Run workflow (fills the table straight away).
+
+The app still calls Open-Meteo live if the table is missing or older than 12 h, and
+falls back to the stored weather (with a "Weather updated X h ago" note) if that fails.

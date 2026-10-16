@@ -34,6 +34,12 @@ from api.assistant import (
     system_prompt,
 )
 from api.logstore import CsvLogStore, LogStore, PostgresLogStore
+from api.weatherstore import (
+    PostgresWeatherStore,
+    WeatherResult,
+    WeatherStore,
+    layered_weather,
+)
 from engine.balance import application_rate_mm_h
 from engine.catalog import get_crop, get_soil, load_systems
 from engine.cli import FarmConfig, farm_today, load_farm
@@ -42,7 +48,7 @@ from engine.models import Block, DailyInput, Farm, PlanDay
 from engine.plan import history_start, plan_days
 
 ROOT = Path(__file__).resolve().parent.parent
-WeatherFn = Callable[[Farm, date, date], list[DailyInput]]
+WeatherFn = Callable[[Farm, date, date], "list[DailyInput] | WeatherResult"]
 PAST_DAYS = 7
 COOKIE_NAME = "saqi_code"
 
@@ -144,9 +150,19 @@ def create_app(
     web_dir: Path | None = None,
     chat_client: Any = "auto",
     access_code: str | None = None,
+    weather_store: WeatherStore | None = None,
 ) -> FastAPI:
     farms_root = farms_dir or default_farms_dir()
-    get_weather = weather or open_meteo_weather(ROOT / ".cache")
+    if weather_store is None and weather is None:
+        weather_url = os.environ.get("DATABASE_URL", "").strip()
+        if weather_url:
+            weather_store = PostgresWeatherStore(weather_url)
+    live_weather = weather or open_meteo_weather(ROOT / ".cache")
+    get_weather: WeatherFn = (
+        layered_weather(weather_store, live_weather)  # type: ignore[arg-type]
+        if weather_store is not None
+        else live_weather
+    )
     local_today = today_fn or farm_today
     static_dir = web_dir if web_dir is not None else ROOT / "web"
     if chat_client == "auto":
@@ -169,6 +185,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         store.ensure_schema()
+        if weather_store is not None:
+            weather_store.ensure_schema()
         yield
 
     app = FastAPI(title="Saqi", version="0.1.0", lifespan=lifespan)
@@ -211,13 +229,21 @@ def create_app(
                 totals[day] = totals.get(day, 0.0) + float(row["gross_mm"])
         return totals
 
-    def block_plans(config: FarmConfig, farm_id: str) -> list[tuple[Block, list[PlanDay]]]:
+    def block_plans(
+        config: FarmConfig, farm_id: str, meta: dict[str, Any] | None = None
+    ) -> list[tuple[Block, list[PlanDay]]]:
         today = config.today
         start = min(history_start(block, today) for block in config.blocks)
         try:
-            inputs = get_weather(config.farm, start, today)
+            fetched = get_weather(config.farm, start, today)
         except (httpx.HTTPError, ValueError) as exc:
             raise HTTPException(502, f"Weather is unavailable: {exc}") from exc
+        if isinstance(fetched, WeatherResult):
+            inputs, fetched_at = fetched.days, fetched.fetched_at
+        else:
+            inputs, fetched_at = fetched, None
+        if meta is not None:
+            meta["weather_fetched_at"] = fetched_at
         rows = read_log(farm_id)
         plans = []
         for block in config.blocks:
@@ -278,7 +304,8 @@ def create_app(
         config = load(farm_id)
         today = config.today
         blocks_out = []
-        for block, days in block_plans(config, farm_id):
+        meta: dict[str, Any] = {}
+        for block, days in block_plans(config, farm_id, meta):
             by_date = {day.date: day for day in days}
             week_ago = today - timedelta(days=PAST_DAYS)
             if today not in by_date:
@@ -295,6 +322,7 @@ def create_app(
         return {
             "farm": {"id": farm_id, **config.farm.model_dump(exclude={"owner_whatsapp"})},
             "today": today,
+            "weather_fetched_at": meta.get("weather_fetched_at"),
             "blocks": blocks_out,
         }
 

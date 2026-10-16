@@ -81,6 +81,7 @@ button, input, select { font: inherit; color: inherit; }
 
 main { max-width: 600px; margin: 0 auto; padding: 4px 16px 24px; }
 .status { color: var(--muted); padding: 32px 0; }
+.weather-age { margin: 10px 2px 0; font-size: 0.85rem; color: var(--soil); }
 .status.error { color: var(--danger); }
 
 .gate { max-width: 600px; margin: 0 auto; padding: 8px 16px 24px; }

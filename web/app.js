@@ -3,6 +3,7 @@
 
 const T = {
   en: {
+    weatherAge: (h) => h >= 48 ? `Weather updated ${Math.round(h / 24)} days ago` : `Weather updated ${h} h ago`,
     chatTitle: "Ask Saqi", chatHint: "Ask about today's advice, or tell Saqi what you irrigated and it will log it.",
     send: "Send", thinking: "Thinking…", loggedNote: (rt, d) => `Logged: ${rt} on ${d}`,
     chatError: "Saqi couldn't answer.",
@@ -42,6 +43,7 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   fr: {
+    weatherAge: (h) => h >= 48 ? `Météo mise à jour il y a ${Math.round(h / 24)} jours` : `Météo mise à jour il y a ${h} h`,
     chatTitle: "Demander à Saqi", chatHint: "Posez une question sur le conseil du jour, ou dites à Saqi ce que vous avez arrosé et il le notera.",
     send: "Envoyer", thinking: "Réflexion…", loggedNote: (rt, d) => `Noté : ${rt} le ${d}`,
     chatError: "Saqi n'a pas pu répondre.",
@@ -81,6 +83,7 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   ar: {
+    weatherAge: (h) => h >= 48 ? `آخر تحديث للطقس قبل ${Math.round(h / 24)} أيام` : `آخر تحديث للطقس قبل ${h} ساعة`,
     chatTitle: "اسأل ساقي", chatHint: "اسأل عن توصية اليوم، أو أخبر ساقي كم سقيت وهو يسجّلها.",
     send: "إرسال", thinking: "عم فكّر…", loggedNote: (rt, d) => `تم التسجيل: ${rt} بتاريخ ${d}`,
     chatError: "ما قدر ساقي يجاوب.",
@@ -289,6 +292,16 @@ async function load(farmId) {
 function render(plan) {
   const main = $("#main");
   main.innerHTML = "";
+  // Weather comes from a store refreshed every few hours; say so when it's getting old.
+  if (plan.weather_fetched_at) {
+    const hours = Math.floor((Date.now() - Date.parse(plan.weather_fetched_at)) / 3600000);
+    if (hours >= 6) {
+      const note = document.createElement("p");
+      note.className = "weather-age";
+      note.textContent = t().weatherAge(hours);
+      main.append(note);
+    }
+  }
   plan.blocks.forEach((b) => main.append(renderBlock(plan, b)));
   const unverified = plan.blocks.some((b) => b.unverified.length);
   renderChat();
