@@ -1,0 +1,161 @@
+"""Inputs and outputs for one farm block. Numbers are computed elsewhere."""
+
+from datetime import date
+from typing import Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+SystemName = Literal["drip", "micro_sprinkler", "sprinkler", "pivot", "surface"]
+
+
+class Farm(BaseModel):
+    """A farm. Recommendations are still computed per block."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    owner_whatsapp: str = Field(min_length=1)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    timezone: str = Field(min_length=1)
+
+
+class SystemParams(BaseModel):
+    """Drip emitters, or a mm/h rate for sprinkler, pivot, micro-sprinkler and surface.
+
+    Leave efficiency empty to use the SPEC default for that system.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    efficiency: float | None = Field(default=None, gt=0, le=1)
+    emitter_flow_lph: float | None = Field(default=None, gt=0)
+    emitter_spacing_m: float | None = Field(default=None, gt=0)
+    lateral_spacing_m: float | None = Field(default=None, gt=0)
+    application_rate_mm_h: float | None = Field(default=None, gt=0)
+
+
+class Block(BaseModel):
+    """One irrigated crop area. planting_date is season start for perennials."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    farm_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    area_ha: float = Field(gt=0)
+    crop: str = Field(min_length=1)
+    planting_date: date
+    soil_type: str = Field(min_length=1)
+    system: SystemName
+    system_params: SystemParams
+    kr: float = Field(default=1.0, ge=0)
+
+    @model_validator(mode="after")
+    def _resolve_system(self) -> Self:
+        # Imported here so model definitions do not load the yaml catalog at import time.
+        from engine.catalog import load_systems
+
+        params = self.system_params
+        efficiency = params.efficiency
+        if efficiency is None:
+            record = load_systems().get(self.system)
+            if record is None:
+                raise ValueError(f"efficiency is required for system {self.system!r}")
+            params = params.model_copy(update={"efficiency": record.efficiency})
+            self.system_params = params
+
+        if self.system == "drip":
+            missing = [
+                name
+                for name, value in (
+                    ("emitter_flow_lph", params.emitter_flow_lph),
+                    ("emitter_spacing_m", params.emitter_spacing_m),
+                    ("lateral_spacing_m", params.lateral_spacing_m),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError("drip requires " + ", ".join(missing))
+        elif params.application_rate_mm_h is None:
+            raise ValueError(f"{self.system} requires application_rate_mm_h")
+        return self
+
+
+class DailyInput(BaseModel):
+    """Weather and the irrigation that was actually applied on one date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    et0_mm: float = Field(ge=0)
+    rain_mm: float = Field(ge=0)
+    irrigation_applied_mm: float = Field(default=0.0, ge=0)
+
+
+class DailyResult(BaseModel):
+    """One day's recommendation and the water-balance terms that explain it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    irrigate: bool
+    net_mm: float
+    gross_mm: float
+    runtime_h: float
+    dr_mm: float
+    raw_mm: float
+    taw_mm: float
+    et0_mm: float
+    kc: float
+    etc_mm: float
+    peff_mm: float
+
+
+class CropRecord(BaseModel):
+    """One crop from engine/data/crops.yaml."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    verify: bool
+    perennial: bool
+    kc_ini: float = Field(ge=0)
+    kc_mid: float = Field(ge=0)
+    kc_end: float = Field(ge=0)
+    zr_min_m: float = Field(gt=0)
+    zr_max_m: float = Field(gt=0)
+    p: float = Field(gt=0, le=1)
+    l_ini: int = Field(ge=0)
+    l_dev: int = Field(ge=0)
+    l_mid: int = Field(ge=0)
+    l_late: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _root_bounds(self) -> Self:
+        if self.zr_min_m > self.zr_max_m:
+            raise ValueError("zr_min_m cannot exceed zr_max_m")
+        return self
+
+
+class SystemRecord(BaseModel):
+    """One irrigation system from engine/data/systems.yaml."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    verify: bool
+    efficiency: float = Field(gt=0, le=1)
+
+
+class SoilRecord(BaseModel):
+    """One soil from engine/data/soils.yaml. Water contents are volumetric."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    verify: bool
+    theta_fc: float = Field(gt=0, lt=1)
+    theta_wp: float = Field(gt=0, lt=1)
+
+    @model_validator(mode="after")
+    def _field_capacity_above_wilting(self) -> Self:
+        if self.theta_fc <= self.theta_wp:
+            raise ValueError("theta_fc must exceed theta_wp")
+        return self

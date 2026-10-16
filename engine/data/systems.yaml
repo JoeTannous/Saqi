@@ -1,0 +1,19 @@
+# Application efficiency used when a block does not set its own.
+# docs/SPEC.md. micro_sprinkler has no default there, so it is omitted
+# and the block must set efficiency. verify: true.
+
+drip:
+  verify: true
+  efficiency: 0.90
+
+sprinkler:
+  verify: true
+  efficiency: 0.75
+
+pivot:
+  verify: true
+  efficiency: 0.85
+
+surface:
+  verify: true
+  efficiency: 0.60

@@ -20,3 +20,9 @@ Every number shown to a farmer must come from deterministic, unit-tested code in
 - Values marked `verify: true` in data files are FAO-56 defaults awaiting confirmation from a local irrigation expert. Don't silently change them.
 - Small commits, run `pytest` before saying a task is done.
 - Secrets in `.env` only (never commit). `.env.example` lists required keys.
+
+## Definition of done (every task)
+- Run `pytest` and `ruff check .` until clean.
+- Commit with a clear message and push to `main`. Never leave work uncommitted.
+- End with a 3-line summary: what changed, how it was tested, anything unverified or assumed.
+- Update the status checkboxes in `docs/ROADMAP.md` if the task completes one.

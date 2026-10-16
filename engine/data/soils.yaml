@@ -1,0 +1,37 @@
+# Volumetric water content (m3/m3) from docs/SPEC.md.
+# FAO-56 Table 19 defaults. verify: true until a local soil check.
+
+sand:
+  verify: true
+  theta_fc: 0.12
+  theta_wp: 0.04
+
+loamy_sand:
+  verify: true
+  theta_fc: 0.14
+  theta_wp: 0.06
+
+sandy_loam:
+  verify: true
+  theta_fc: 0.23
+  theta_wp: 0.10
+
+loam:
+  verify: true
+  theta_fc: 0.25
+  theta_wp: 0.12
+
+silt_loam:
+  verify: true
+  theta_fc: 0.29
+  theta_wp: 0.15
+
+clay_loam:
+  verify: true
+  theta_fc: 0.32
+  theta_wp: 0.20
+
+clay:
+  verify: true
+  theta_fc: 0.36
+  theta_wp: 0.22

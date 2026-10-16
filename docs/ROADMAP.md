@@ -1,0 +1,56 @@
+# Roadmap & prompt queue
+
+How we work: JT runs each prompt below in a fresh Cursor agent (Grok for routine work).
+When the agent has pushed, JT tells Claude "done" and Claude reviews the latest commit.
+Claude handles spec, maths/agronomy review, and the Claude-layer design (phase 3).
+
+## Status
+- [x] Spec + AGENTS.md
+- [x] Prompt 1: engine core (FAO-56 water balance, tests) — maths reviewed by Claude
+- [ ] Prompt 2: weather + CLI
+- [ ] Prompt 3: sanity check → docs/SANITY.md (Claude reviews)
+- [ ] Dad call: confirm crop/soil values, Agrimatco system specs, 2–3 pilot farms → update engine/data
+- [ ] Prompt 4: minimal API (below)
+- [ ] UI: mobile farm page — today + 7-day plan, "Why?" button, pilot log form (Claude builds)
+- [ ] "Why?" explanation: Claude explains today's numbers in AR/FR/EN (design with Claude)
+- [ ] Dry run on real pilot farm coordinates before flying (1 Nov 2026)
+
+## Trip MVP scope (before 1 Nov 2026)
+In: calibrated engine, mobile page per farm, "Why?" explanation, pilot log (planned vs actual).
+Out until after the trip: Supabase/auth, full chat, WhatsApp automation (forward daily recs manually during pilot), dashboard extras.
+
+## Later
+- [ ] Supabase + auth + daily scheduled job
+- [ ] Full Claude chat with tool use (get_recommendation, get_block_history, log_irrigation)
+- [ ] WhatsApp daily message + "done 2h" logging
+- [ ] Sentinel-2 NDVI, soil sensors, deficit irrigation
+
+## Prompt 2: weather + CLI
+```
+Read AGENTS.md and docs/SPEC.md. engine/ already exists and is tested.
+Add engine/weather.py: fetch daily et0_fao_evapotranspiration and precipitation_sum from Open-Meteo forecast (past_days=7, forecast_days=7) and archive API (date range). Use httpx, simple file cache in .cache/ keyed by lat/lon/date range. Return list of DailyInput.
+Add examples/bekaa_potato.yaml (farm near Zahle, lat 33.85 lon 35.90, one potato block on loam, drip 1.6 L/h emitters, 0.3 m emitter spacing, 0.9 m lateral spacing, planted 60 days ago) and examples/coast_citrus.yaml (near Damour, citrus, micro-sprinkler).
+Add engine/cli.py: `python -m engine.cli --farm examples/bekaa_potato.yaml [--backfill-from YYYY-MM-DD]` prints a table per block: date, ET0, rain, Kc, ETc, Dr, RAW, irrigate?, gross mm, runtime h:mm. Past days flagged as observed, future days as forecast.
+Mock HTTP in tests (no network in pytest). Follow the definition of done in AGENTS.md.
+```
+
+## Prompt 3: sanity check
+```
+Read AGENTS.md. Run the CLI on both example farms with --backfill-from set to 90 days ago.
+Write docs/SANITY.md: for each block, total ETc over the period, total gross irrigation recommended, number of irrigation events, average interval between irrigations. Compare against typical seasonal water use for potato and citrus in Lebanon / Mediterranean (cite FAO or other sources in the doc). Flag anything implausible (e.g. irrigating daily on clay, runtime > 12 h, zero irrigation in summer) and fix the engine if it's a bug, not a data issue. List any data values you think are wrong under "Questions for agronomist". Follow the definition of done in AGENTS.md.
+```
+
+## Prompt 4: minimal API
+```
+Read AGENTS.md and docs/SPEC.md. engine/ and the CLI exist and are tested.
+Add api/ with FastAPI (add fastapi + uvicorn to pyproject). No database: farms load from examples/*.yaml (or farms/*.yaml if present).
+Endpoints:
+- GET /farms -> list of farms (id = yaml file stem, name, lat, lon, blocks summary).
+- GET /farms/{farm_id}/plan -> for each block: today's DailyResult plus 7-day forecast and 7 past days, using the same code path as the CLI. Include all reason fields (et0, kc, etc, peff, dr, raw, taw) so the UI and LLM never compute numbers.
+- POST /farms/{farm_id}/blocks/{block}/log {date, irrigated_mm or runtime_h, note} -> append to data/pilot_log.csv (create if missing; gitignore data/). Feed logged irrigation back into the balance as irrigation_applied_mm on that date.
+- GET /farms/{farm_id}/log -> logged entries with the recommendation made for that day alongside (planned vs actual).
+Enable CORS for localhost. Tests with FastAPI TestClient and mocked weather. Document the run command in README.md. Follow the definition of done in AGENTS.md.
+```
+
+## Open questions for Dad
+See the end of docs/SPEC.md.

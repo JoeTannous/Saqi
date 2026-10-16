@@ -1,0 +1,132 @@
+# FAO-56 single-crop-coefficient defaults. Every entry is verify: true
+# until a local irrigation specialist confirms it. Do not change these
+# numbers silently.
+#
+# Kc, Zr_max and p are the values named in docs/SPEC.md (FAO-56 Tables 12 and 22).
+# Stage lengths are days: L_ini, L_dev, L_mid, L_late.
+# Zr_min for annuals is 0.15 m (FAO-56 Annex 8: 0.15–0.20 m at planting).
+# Perennials are already rooted, so Zr_min = Zr_max and depth does not grow.
+
+potato:
+  verify: true
+  perennial: false
+  kc_ini: 0.50
+  kc_mid: 1.15
+  kc_end: 0.75
+  zr_min_m: 0.15
+  zr_max_m: 0.50
+  p: 0.35
+  # Table 11 has no Mediterranean potato row. April, Europe (145 days)
+  # is the spring-planted row used for the Bekaa.
+  l_ini: 30
+  l_dev: 35
+  l_mid: 50
+  l_late: 30
+
+tomato:
+  verify: true
+  perennial: false
+  kc_ini: 0.60
+  kc_mid: 1.15
+  kc_end: 0.80
+  zr_min_m: 0.15
+  zr_max_m: 1.00
+  p: 0.40
+  # Table 11: April/May, Mediterranean.
+  l_ini: 30
+  l_dev: 40
+  l_mid: 45
+  l_late: 30
+
+wheat:
+  verify: true
+  perennial: false
+  kc_ini: 0.30
+  kc_mid: 1.15
+  kc_end: 0.30
+  zr_min_m: 0.15
+  zr_max_m: 1.20
+  p: 0.55
+  # Table 11: winter wheat, November, Mediterranean.
+  l_ini: 30
+  l_dev: 140
+  l_mid: 40
+  l_late: 30
+
+table_grapes:
+  verify: true
+  perennial: true
+  kc_ini: 0.30
+  kc_mid: 0.85
+  kc_end: 0.45
+  zr_min_m: 1.50
+  zr_max_m: 1.50
+  p: 0.35
+  # Table 11 has no Mediterranean grape row. March, California (Mediterranean
+  # climate, table or raisin — not the mid-latitude wine row).
+  l_ini: 20
+  l_dev: 50
+  l_mid: 75
+  l_late: 60
+
+citrus:
+  verify: true
+  perennial: true
+  kc_ini: 0.70
+  kc_mid: 0.65
+  kc_end: 0.70
+  zr_min_m: 1.20
+  zr_max_m: 1.20
+  p: 0.50
+  # Table 11: January, Mediterranean. Kc is the 70% canopy, no cover crop.
+  l_ini: 60
+  l_dev: 90
+  l_mid: 120
+  l_late: 95
+
+olive:
+  verify: true
+  perennial: true
+  kc_ini: 0.65
+  kc_mid: 0.70
+  kc_end: 0.70
+  zr_min_m: 1.50
+  zr_max_m: 1.50
+  p: 0.65
+  # Table 11: March, Mediterranean (270 days). Kc outside this window is not modeled.
+  l_ini: 30
+  l_dev: 90
+  l_mid: 60
+  l_late: 90
+
+avocado:
+  verify: true
+  perennial: true
+  kc_ini: 0.60
+  kc_mid: 0.85
+  kc_end: 0.75
+  zr_min_m: 0.70
+  zr_max_m: 0.70
+  p: 0.70
+  # Table 11 has no avocado row. Citrus, January, Mediterranean is the
+  # evergreen fruit proxy (60/90/120/95).
+  l_ini: 60
+  l_dev: 90
+  l_mid: 120
+  l_late: 95
+
+apple:
+  verify: true
+  perennial: true
+  kc_ini: 0.60
+  kc_mid: 0.95
+  kc_end: 0.75
+  zr_min_m: 1.20
+  zr_max_m: 1.20
+  p: 0.50
+  # Table 11 deciduous orchard, March, California (Mediterranean climate,
+  # no-frost Kc from Table 12). No row is labeled Mediterranean.
+  l_ini: 30
+  l_dev: 50
+  l_mid: 130
+  l_late: 30
