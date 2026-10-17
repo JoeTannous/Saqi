@@ -195,6 +195,7 @@ main { max-width: 600px; margin: 0 auto; padding: 4px 16px 24px; }
 .field-flags { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .field-flags li { background: var(--soil-soft); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 0.9rem; }
 .field-flags:empty { display: none; }
+.field-flags li.info { background: var(--water-soft); }
 .field-trend { margin: 12px 0 0; }
 .field-trend svg { width: 100%; height: auto; display: block; overflow: visible; }
 .field-trend .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }

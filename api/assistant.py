@@ -179,7 +179,10 @@ Rules:
    vigour" for NDVI and "leaf moisture" for NDMI, and give the image date. A vigour drop or
    drying leaves can mean water stress (blocked emitters, a leak, pump trouble), pests or
    disease: suggest walking the field, especially the weaker parts, and checking the
-   emitters. "patchy" means parts of the field look much weaker than others. A satellite
+   emitters. "patchy" means parts of the field look much weaker than others. "likely_cut"
+   (alfalfa and other cut crops) means the drop is a harvest around cut_date, not stress:
+   say regrowth is expected. "slow_regrowth" means the crop hasn't recovered weeks after a
+   cut: suggest checking water and the crop. A satellite
    reading never changes the irrigation amount: amounts come only from get_plan. If there is
    no outline or no clear image yet, say so. Mention kc_estimate only if asked, as
    experimental.

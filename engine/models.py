@@ -34,6 +34,9 @@ class SystemParams(BaseModel):
     lateral_spacing_m: float | None = Field(default=None, gt=0)
     application_rate_mm_h: float | None = Field(default=None, gt=0)
     max_runtime_h: float | None = Field(default=None, gt=0)
+    # Irrigate when depletion reaches this fraction of RAW. 1.0 = wait until the stress
+    # threshold (fine for infrequent systems); pivots/drip keep the soil fuller.
+    trigger_fraction: float | None = Field(default=None, gt=0, le=1)
 
 
 class Boundary(BaseModel):
@@ -91,6 +94,11 @@ class Block(BaseModel):
             if record is not None and record.max_runtime_h is not None:
                 params = params.model_copy(update={"max_runtime_h": record.max_runtime_h})
                 self.system_params = params
+        if params.trigger_fraction is None:
+            record = load_systems().get(self.system)
+            fraction = record.trigger_fraction if record is not None else None
+            params = params.model_copy(update={"trigger_fraction": fraction or 1.0})
+            self.system_params = params
 
         if self.system == "drip":
             missing = [
@@ -137,6 +145,7 @@ class DailyResult(BaseModel):
     kc: float
     etc_mm: float
     peff_mm: float
+    trigger_mm: float | None = None  # depletion at which irrigation starts (<= raw_mm)
 
 
 class CropRecord(BaseModel):
@@ -156,6 +165,7 @@ class CropRecord(BaseModel):
     l_dev: int = Field(ge=0)
     l_mid: int = Field(ge=0)
     l_late: int = Field(ge=0)
+    cut_crop: bool = False  # harvested by cutting and regrows (alfalfa): NDVI drops are cuts
 
     @model_validator(mode="after")
     def _root_bounds(self) -> Self:
@@ -172,6 +182,7 @@ class SystemRecord(BaseModel):
     verify: bool
     efficiency: float = Field(gt=0, le=1)
     max_runtime_h: float | None = Field(default=None, gt=0)
+    trigger_fraction: float | None = Field(default=None, gt=0, le=1)
 
 
 class SoilRecord(BaseModel):

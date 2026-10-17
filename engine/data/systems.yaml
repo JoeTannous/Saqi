@@ -22,6 +22,9 @@ sprinkler:
 pivot:
   verify: true
   efficiency: 0.85
+  # Pivots apply little and often: start when 30% of RAW is used, not at the stress
+  # threshold, so the plan doesn't swing between non-stop running and long gaps.
+  trigger_fraction: 0.3
 
 surface:
   verify: true

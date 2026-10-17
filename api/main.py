@@ -270,7 +270,8 @@ def create_app(
             return None
         since = today - timedelta(days=SATELLITE_DAYS)
         observations = fields.observations(farm_id, slug(block.name), since)
-        return assess(observations, today, kc_mid=get_crop(block.crop).kc_mid)
+        crop = get_crop(block.crop)
+        return assess(observations, today, kc_mid=crop.kc_mid, cut_crop=crop.cut_crop)
 
     def field_summary(farm_id: str, block: Block, today: date) -> dict[str, Any] | None:
         health = field_health(farm_id, block, today)
@@ -290,6 +291,7 @@ def create_app(
             "moisture_trend": health.moisture_trend,
             "evenness": health.evenness,
             "flags": health.flags,
+            "cut_date": health.cut_date,
             "kc_estimate": _r(health.kc_estimate, 2),
             "valid_pixels": latest.valid_pixels if latest else None,
             "map_date": mapped.date if mapped else None,

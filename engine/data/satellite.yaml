@@ -19,3 +19,8 @@ ndvi_bare: 0.15
 ndvi_full: 0.85
 ml: 1.5
 kc_min: 0.15
+# Cut crops (alfalfa): a sharp NDVI drop right after a high peak is a harvest, not stress.
+cut_peak_ndvi: 0.55          # the crop must have been this green before the drop
+cut_drop: 0.15               # drop from that peak to count as a cut
+cut_lookback_days: 21        # the peak must be within this many days before the latest pass
+regrowth_days: 28            # still this far below the peak this long after a cut: slow regrowth

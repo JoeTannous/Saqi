@@ -156,3 +156,19 @@ def test_volume_is_gross_depth_over_the_block() -> None:
     # Day 0 refills 8 mm net -> 8 / 0.9 = 8.889 mm gross; 1 mm on 1 ha = 10 m3 -> 88.89 m3.
     plan = list(plan_days(_block(None), _days([16]), today=PLANTED))
     assert plan[0].volume_m3 == pytest.approx(8.0 / 0.9 * 1.0 * 10)
+
+
+def test_pivot_starts_irrigating_before_the_stress_threshold() -> None:
+    # Pivots default to trigger_fraction 0.3: day 0 RAW 6.825 -> trigger 2.05 mm.
+    # ETc 0.5 * 5 = 2.5 mm >= 2.05 -> irrigate on day 0 (a drip block would wait).
+    pivot = Block(
+        farm_id="f", name="P", area_ha=30, crop="potato", planting_date=PLANTED,
+        soil_type="loam", system="pivot",
+        system_params=SystemParams(application_rate_mm_h=0.5),
+    )
+    assert pivot.system_params.trigger_fraction == pytest.approx(0.3)
+    day0 = list(plan_days(pivot, _days([5]), today=PLANTED))[0]
+    assert day0.trigger_mm == pytest.approx(6.825 * 0.3)
+    assert day0.irrigate is True
+    drip0 = list(plan_days(_block(None), _days([5]), today=PLANTED))[0]
+    assert drip0.irrigate is False and drip0.trigger_mm == pytest.approx(6.825)

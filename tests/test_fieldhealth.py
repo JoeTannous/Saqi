@@ -80,3 +80,30 @@ def test_boundary_must_be_a_closed_lon_lat_ring() -> None:
     with pytest.raises(ValueError):
         Boundary(type="Polygon", coordinates=[[(200, 33.85), (35.9, 33.86), (35.8, 33.8),
                                                (200, 33.85)]])
+
+
+def test_cut_crop_drop_is_a_harvest_not_stress() -> None:
+    # Alfalfa: 0.70 peak 10 days ago, now 0.45 (drop 0.25 >= 0.15) -> likely cut, no alarms.
+    passes = [obs(25, 0.66, 0.30), obs(15, 0.68, 0.30), obs(10, 0.70, 0.30),
+              obs(5, 0.45, 0.15), obs(1, 0.47, 0.16)]
+    plain = assess(passes, TODAY)
+    assert "vigour_drop" in plain.flags  # same data, non-cut crop: still an alarm
+    cut = assess(passes, TODAY, cut_crop=True)
+    assert "likely_cut" in cut.flags
+    assert "vigour_drop" not in cut.flags and "canopy_drying" not in cut.flags
+    assert cut.cut_date == TODAY - timedelta(days=5)
+
+
+def test_cut_crop_that_does_not_regrow_is_flagged() -> None:
+    # Cut 30 days ago from a 0.70 peak and still at 0.40: slow regrowth.
+    passes = [obs(45, 0.70), obs(35, 0.70), obs(30, 0.40), obs(20, 0.40),
+              obs(10, 0.41), obs(1, 0.40)]
+    h = assess(passes, TODAY, cut_crop=True)
+    assert "slow_regrowth" in h.flags
+    assert "likely_cut" not in h.flags
+
+
+def test_regrown_cut_crop_has_no_cut_flags() -> None:
+    passes = [obs(45, 0.70), obs(35, 0.70), obs(30, 0.40), obs(10, 0.62), obs(1, 0.68)]
+    h = assess(passes, TODAY, cut_crop=True)
+    assert "likely_cut" not in h.flags and "slow_regrowth" not in h.flags

@@ -148,3 +148,4 @@ alfalfa:
   l_dev: 30
   l_mid: 300
   l_late: 25
+  cut_crop: true

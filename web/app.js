@@ -15,6 +15,8 @@ const T = {
       patchy: "Parts of the field look much weaker than others. Check the pale spots on the map.",
       stale: "No clear image for a while, so this reading may be out of date.",
       small_plot: "This plot is small for 10 m satellite pixels, so readings are rough.",
+      likely_cut: (d) => `Likely cut around ${d}. Vigour should climb back as it regrows.`,
+      slow_regrowth: "Not growing back well since the last cut. Check water and the crop.",
     },
     weatherAge: (h) => h >= 48 ? `Weather updated ${Math.round(h / 24)} days ago` : `Weather updated ${h} h ago`,
     chatTitle: "Ask Saqi", chatHint: "Ask about today's advice, or tell Saqi what you irrigated and it will log it.",
@@ -69,6 +71,8 @@ const T = {
       patchy: "Certaines zones sont bien plus faibles que d'autres. Vérifiez les taches claires sur la carte.",
       stale: "Pas d'image claire depuis un moment : la lecture peut être dépassée.",
       small_plot: "La parcelle est petite pour des pixels de 10 m : les valeurs sont approximatives.",
+      likely_cut: (d) => `Coupe probable vers le ${d}. La vigueur devrait remonter avec la repousse.`,
+      slow_regrowth: "La repousse est lente depuis la dernière coupe. Vérifiez l'eau et la culture.",
     },
     weatherAge: (h) => h >= 48 ? `Météo mise à jour il y a ${Math.round(h / 24)} jours` : `Météo mise à jour il y a ${h} h`,
     chatTitle: "Demander à Saqi", chatHint: "Posez une question sur le conseil du jour, ou dites à Saqi ce que vous avez arrosé et il le notera.",
@@ -123,6 +127,8 @@ const T = {
       patchy: "في أجزاء من الحقل أضعف بكتير من غيرها. افحص البقع الفاتحة على الخريطة.",
       stale: "ما في صورة واضحة من فترة، فالقراءة ممكن تكون قديمة.",
       small_plot: "القطعة صغيرة بالنسبة لدقة ١٠ أمتار، فالأرقام تقريبية.",
+      likely_cut: (d) => `على الأرجح انحشّ حوالي ${d}. قوة النمو لازم ترجع ترتفع مع النبت الجديد.`,
+      slow_regrowth: "الزرع ما عم يرجع ينبت منيح من آخر حشّة. افحص المي والزرع.",
     },
     weatherAge: (h) => h >= 48 ? `آخر تحديث للطقس قبل ${Math.round(h / 24)} أيام` : `آخر تحديث للطقس قبل ${h} ساعة`,
     chatTitle: "اسأل ساقي", chatHint: "اسأل عن توصية اليوم، أو أخبر ساقي كم سقيت وهو يسجّلها.",
@@ -421,7 +427,7 @@ function renderBlock(plan, b) {
     L.why2(mm(d.dr_mm), mm(d.raw_mm), mm(d.taw_mm)),
     d.irrigate
       ? L.why3go(mm(d.net_mm), mm(d.gross_mm), Math.round(b.efficiency * 100), hm(d.runtime_h), nf(b.application_rate_mm_h, 1))
-      : L.why3no(mm(d.raw_mm - d.dr_mm)),
+      : L.why3no(mm((d.trigger_mm ?? d.raw_mm) - d.dr_mm)),
   ];
   why.innerHTML = paras.map((p) => `<p>${p}</p>`).join("") + `<p class="source">${L.whySource}</p>`;
 
@@ -496,7 +502,9 @@ function renderField(node, plan, b) {
   const ul = $(".field-flags", box);
   f.flags.forEach((flag) => {
     const li = document.createElement("li");
-    li.textContent = L.flagText[flag] || flag;
+    const text = L.flagText[flag];
+    li.textContent = typeof text === "function" ? text(dayLabel(f.cut_date)) : (text || flag);
+    if (flag === "likely_cut") li.classList.add("info");
     ul.append(li);
   });
 
@@ -527,7 +535,7 @@ function drawProfile(fig, d) {
   const H = 180, W = 72, x = 8, y = 10;
   const taw = Math.max(d.taw_mm, 0.001);
   const used = Math.min(Math.max(d.dr_mm / taw, 0), 1);
-  const trig = Math.min(Math.max(d.raw_mm / taw, 0), 1);
+  const trig = Math.min(Math.max((d.trigger_mm ?? d.raw_mm) / taw, 0), 1);
   const usedH = used * H;
   const trigY = y + trig * H;
   let grains = "";

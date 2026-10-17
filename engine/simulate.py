@@ -79,7 +79,8 @@ def simulate(
         raw = raw_mm(crop.p, taw)
 
         dr_forecast = depletion_mm(dr_prev, peff_mm, 0.0, etc_mm, taw)
-        irrigate, net_mm = trigger_irrigation(dr_forecast, raw)
+        trigger = raw * (block.system_params.trigger_fraction or 1.0)
+        irrigate, net_mm = trigger_irrigation(dr_forecast, trigger)
         gross_mm = gross_depth_mm(net_mm, efficiency)
         hours = runtime_h(gross_mm, rate)
         dr_prev = depletion_mm(dr_prev, peff_mm, day_input.irrigation_applied_mm, etc_mm, taw)
@@ -98,6 +99,7 @@ def simulate(
                 kc=kc,
                 etc_mm=etc_mm,
                 peff_mm=peff_mm,
+                trigger_mm=trigger,
             )
         )
 

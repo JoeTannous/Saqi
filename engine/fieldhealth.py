@@ -56,6 +56,7 @@ class FieldHealth:
     kc_estimate: float | None = None
     flags: list[str] = field(default_factory=list)
     series: list[Observation] = field(default_factory=list)
+    cut_date: date | None = None  # cut crops: first pass after the latest likely cut
 
 
 def usable(observations: list[Observation]) -> list[Observation]:
@@ -87,8 +88,30 @@ def _trend(change: float | None) -> str | None:
     return "steady"
 
 
+def last_cut(series: list[Observation], latest: Observation) -> tuple[date, float] | None:
+    """Most recent cut: a pass >= cut_drop below a preceding peak >= cut_peak_ndvi.
+
+    Returns (first pass after the cut, peak NDVI before it), or None.
+    """
+    t = thresholds()
+    for i in range(len(series) - 1, 0, -1):
+        before = [o for o in series[:i]
+                  if series[i].date - o.date <= timedelta(days=t["cut_lookback_days"])]
+        if not before:
+            continue
+        peak = max(o.ndvi for o in before)
+        if peak >= t["cut_peak_ndvi"] and series[i].ndvi <= peak - t["cut_drop"]:
+            # Walk back to the first low pass of this cut.
+            j = i
+            while j > 0 and series[j - 1].ndvi <= peak - t["cut_drop"]:
+                j -= 1
+            return series[j].date, peak
+    return None
+
+
 def assess(
-    observations: list[Observation], today: date, kc_mid: float | None = None
+    observations: list[Observation], today: date, kc_mid: float | None = None,
+    *, cut_crop: bool = False,
 ) -> FieldHealth:
     t = thresholds()
     series = usable(observations)
@@ -122,6 +145,18 @@ def assess(
         flags.append("canopy_drying")
     if evenness == "patchy":
         flags.append("patchy")
+    cut_date = None
+    if cut_crop:
+        cut = last_cut(series, latest)
+        if cut is not None:
+            cut_date, peak = cut
+            since_cut = (latest.date - cut_date).days
+            if since_cut <= t["cut_lookback_days"]:
+                # A recent cut explains the drop: say so instead of raising stress alarms.
+                flags = [f for f in flags if f not in ("vigour_drop", "canopy_drying")]
+                flags.append("likely_cut")
+            elif since_cut >= t["regrowth_days"] and latest.ndvi <= peak - t["cut_drop"]:
+                flags.append("slow_regrowth")
     if age > t["stale_days"]:
         flags.append("stale")
     if latest.valid_pixels < t["small_plot_pixels"]:
@@ -140,4 +175,5 @@ def assess(
         kc_estimate=kc_from_ndvi(latest.ndvi, kc_mid) if kc_mid is not None else None,
         flags=flags,
         series=series,
+        cut_date=cut_date,
     )
