@@ -153,7 +153,9 @@ Rules:
    number, say Saqi doesn't calculate that yet.
 2. Call get_plan before answering any question about today or the coming days.
 3. Give durations as "X h Y min" using runtime_text or logged_runtime_text from tool results
-   (never "2.0 hours"). Round mm to one decimal.
+   (never "2.0 hours"), always with the depth and the system's rate so the farmer knows the
+   intensity: "4 h 25 min (26 mm at 5.9 mm/h)". For drip, you may add the dripper flow
+   (emitter_flow_lph) and the block volume (volume_m3). Round mm to one decimal.
 4. When the farmer reports irrigation already done ("I ran 2 hours", "سقيت ساعتين", "j'ai arrosé
    3 h hier"), call log_irrigation. If the block, date or amount is unclear, ask one short
    question first. If the farm has one block, use it. "Today" and "yesterday" are relative to the
@@ -314,6 +316,8 @@ def _run_openai_chat(
 
 
 RETRY_DELAYS_S = (1.5, 4.0)
+# Less "thinking" = faster replies; the engine does the maths, so little reasoning is needed.
+_NO_EFFORT: set[bool] = set()
 
 
 def _is_busy(exc: Exception) -> bool:
@@ -327,6 +331,9 @@ def _create_with_fallback(client: Any, model: str, **kwargs: Any) -> Any:
 
     A fallback that doesn't exist for this account (404) is skipped, not fatal.
     """
+    effort = os.environ.get("SAQI_REASONING_EFFORT", "low").strip()
+    if effort and "reasoning_effort" not in kwargs and not _NO_EFFORT:
+        kwargs = {**kwargs, "reasoning_effort": effort}
     raw = os.environ.get("SAQI_FALLBACK_MODEL", "")
     fallbacks = [m.strip() for m in raw.split(",") if m.strip() and m.strip() != model]
     models = [model, *fallbacks]
@@ -339,6 +346,12 @@ def _create_with_fallback(client: Any, model: str, **kwargs: Any) -> Any:
                 return client.chat.completions.create(model=name, **kwargs)
             except Exception as exc:  # provider SDK errors
                 status = getattr(exc, "status_code", None)
+                rejected = status == 400 and "reasoning" in str(exc).lower()
+                if rejected and "reasoning_effort" in kwargs:
+                    # This provider/model doesn't take reasoning_effort: drop it for good.
+                    _NO_EFFORT.add(True)
+                    kwargs = {k: v for k, v in kwargs.items() if k != "reasoning_effort"}
+                    return client.chat.completions.create(model=name, **kwargs)
                 if name != model and status == 404:
                     models.remove(name)
                     continue
@@ -482,6 +495,7 @@ def compact_day(day: Any) -> dict[str, Any]:
         "irrigate": day.irrigate,
         "gross_mm": round(day.gross_mm, 1),
         "runtime_text": runtime_text(day.runtime_h) if day.irrigate else "",
+        "volume_m3": round(day.volume_m3) if day.irrigate else 0,
         "et0_mm": round(day.et0_mm, 1),
         "kc": round(day.kc, 2),
         "etc_mm": round(day.etc_mm, 1),

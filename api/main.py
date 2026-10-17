@@ -410,8 +410,17 @@ def create_app(
         return write_log(load(farm_id), farm_id, block_id, entry)
 
     def farm_tools(config: FarmConfig, farm_id: str) -> FarmTools:
+        # One chat turn can call several tools; compute the farm plan once per turn
+        # and only again after a log changes it.
+        cache: dict[str, list[tuple[Block, list[PlanDay]]]] = {}
+
+        def plans() -> list[tuple[Block, list[PlanDay]]]:
+            if "plans" not in cache:
+                cache["plans"] = block_plans(config, farm_id)
+            return cache["plans"]
+
         def days_for(block_id: str) -> tuple[Block, list[PlanDay]]:
-            for block, days in block_plans(config, farm_id):
+            for block, days in plans():
                 if slug(block.name) == block_id:
                     return block, days
             raise HTTPException(404, f"No block called {block_id!r}")
@@ -422,7 +431,9 @@ def create_app(
             info = block_info(block)
             return {
                 "block": {k: info[k] for k in ("id", "name", "crop", "soil_type", "system",
-                                                "max_runtime_h", "unverified")},
+                                                "area_ha", "application_rate_mm_h",
+                                                "emitter_flow_lph", "max_runtime_h",
+                                                "unverified")},
                 "today": next(compact_day(d) for d in days if d.date == today),
                 "past_7_days": [
                     compact_day(d) for d in days
@@ -446,7 +457,9 @@ def create_app(
                 gross_mm=args.get("gross_mm"),
                 note=str(args.get("note", ""))[:500],
             )
-            return write_log(config, farm_id, str(args["block_id"]), entry)
+            row = write_log(config, farm_id, str(args["block_id"]), entry)
+            cache.clear()
+            return row
 
         def get_field_health(block_id: str) -> dict[str, Any]:
             block = find_block(config, block_id)
@@ -457,7 +470,7 @@ def create_app(
             series = summary.pop("series")
             summary["recent_passes"] = series[-8:]
             summary["engine_kc_today"] = next(
-                (_r(d.kc, 2) for b, days in block_plans(config, farm_id)
+                (_r(d.kc, 2) for b, days in plans()
                  if slug(b.name) == block_id for d in days if d.date == config.today),
                 None,
             )
@@ -549,6 +562,7 @@ def block_info(block: Block) -> dict[str, Any]:
         "perennial": crop.perennial,
         "efficiency": params.efficiency,
         "application_rate_mm_h": application_rate_mm_h(block),
+        "emitter_flow_lph": params.emitter_flow_lph,
         "max_runtime_h": params.max_runtime_h,
         "unverified": [
             name

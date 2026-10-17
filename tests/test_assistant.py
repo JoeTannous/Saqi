@@ -182,3 +182,33 @@ def test_log_runs_before_plan_in_the_same_step(tmp_path: Path) -> None:
     day = next(d for d in plan["past_7_days"] if d["date"] == yesterday)
     assert day["applied"] == "logged"
     assert day["logged_runtime_text"] == "3 h"
+
+
+def test_one_chat_turn_computes_the_plan_once(tmp_path: Path) -> None:
+    from api.main import create_app as _create
+    from tests.test_api import fake_weather
+
+    calls: list[int] = []
+
+    def counting_weather(*args: object) -> object:
+        calls.append(1)
+        return fake_weather(*args)  # type: ignore[arg-type]
+
+    farms = tmp_path / "farms"
+    farms.mkdir()
+    (farms / "test.yaml").write_text(FARM_YAML, encoding="utf-8")
+    fake = FakeClient([
+        reply(tool("a", "get_plan", {"block_id": "block-1"}),
+              tool("b", "get_history", {"block_id": "block-1", "days": 7}), stop="tool_use"),
+        reply(tool("c", "get_plan", {"block_id": "block-1"}), stop="tool_use"),
+        reply(text("ok")),
+    ])
+    app = _create(farms_dir=farms, log_path=tmp_path / "l.csv", weather=counting_weather,
+                  today_fn=lambda tz: TODAY, web_dir=tmp_path / "x", chat_client=fake)
+    TestClient(app).post("/api/farms/test/chat",
+                         json={"messages": [{"role": "user", "content": "x"}]})
+    assert len(calls) == 1
+    plan = json.loads(fake.messages.calls[1]["messages"][-1]["content"][0]["content"])
+    # Rate and dripper flow reach the model so it can say "26 mm at 5.9 mm/h".
+    assert plan["block"]["application_rate_mm_h"] == pytest.approx(4.0)
+    assert plan["block"]["emitter_flow_lph"] == pytest.approx(2.0)

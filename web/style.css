@@ -130,6 +130,7 @@ main { max-width: 600px; margin: 0 auto; padding: 4px 16px 24px; }
 }
 .answer.go { color: var(--water); }
 .detail { margin: 0; color: var(--muted); }
+.rate { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
 .carry {
   margin: 10px 0 0;
   padding: 8px 10px;

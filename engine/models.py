@@ -206,3 +206,4 @@ class PlanDay(DailyResult):
     logged_gross_mm: float | None
     logged_runtime_h: float | None
     dr_end_mm: float
+    volume_m3: float  # gross depth over the block: 1 mm on 1 ha = 10 m3

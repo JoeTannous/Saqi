@@ -286,3 +286,31 @@ def test_sdk_extra_fields_are_preserved() -> None:
 
     out = _openai_assistant_message(message, list(message.tool_calls or []))
     assert out["tool_calls"][0]["extra_content"] == {"google": {"thought_signature": "sig"}}
+
+
+def test_reasoning_effort_is_sent_and_dropped_if_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api import assistant
+
+    class Rejected(Exception):
+        status_code = 400
+
+        def __str__(self) -> str:
+            return "Unknown parameter: reasoning_effort"
+
+    seen: list[object] = []
+
+    class Completions:
+        def create(self, model: str, **kwargs: object) -> object:
+            seen.append(kwargs.get("reasoning_effort"))
+            if "reasoning_effort" in kwargs:
+                raise Rejected()
+            return "ok"
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setenv("SAQI_REASONING_EFFORT", "low")
+    monkeypatch.setattr(assistant, "_NO_EFFORT", set())
+    assert assistant._create_with_fallback(client, "m") == "ok"
+    assert seen == ["low", None]
+    # Remembered: the next call doesn't try it again.
+    assert assistant._create_with_fallback(client, "m") == "ok"
+    assert seen[-1] is None and len(seen) == 3

@@ -97,5 +97,6 @@ def plan_days(
             logged_gross_mm=logged_mm,
             logged_runtime_h=runtime_h(logged_mm, rate) if logged_mm is not None else None,
             dr_end_mm=dr_end_mm,
+            volume_m3=gross_mm * block.area_ha * 10.0,
         )
         dr_mm = dr_end_mm

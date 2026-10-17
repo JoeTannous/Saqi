@@ -1,0 +1,60 @@
+# DEMO FARM. Two real centre-pivot circles in Wadi Al-Dawasir, Saudi Arabia, traced
+# on geojson.io satellite imagery. They are not Agrimatco or pilot fields and the
+# farm details below are assumptions, chosen to show Saqi on real Saudi crops.
+# Replace with the pilot farm when the farm manager sends its plots.
+#
+# Assumptions (all to confirm):
+# - Crop: alfalfa, the usual pivot crop here (FAO-56 averaged-cutting Kc).
+# - Soil: loamy sand (sandy desert soils).
+# - Pivot rate 0.45 mm/h averaged over the circle (~10.8 mm/day running 24 h),
+#   a typical system capacity; real value = pivot flow / circle area.
+# - Efficiency 0.85 (pivot default in engine/data/systems.yaml).
+# - At most 24 h of running per day; larger refills carry over to the next days.
+
+name: Wadi Al-Dawasir pivots (demo)
+owner_whatsapp: "+966500000000"
+lat: 20.3066
+lon: 44.7797
+timezone: Asia/Riyadh
+blocks:
+  - farm_id: wadi-al-dawasir-demo
+    name: Pivot A
+    area_ha: 37
+    crop: alfalfa
+    planting_date: "2026-01-01"
+    soil_type: loamy_sand
+    system: pivot
+    system_params:
+      application_rate_mm_h: 0.45
+      max_runtime_h: 24   # a pivot runs in daily cycles; a bigger refill continues next day
+    boundary:
+      type: Polygon
+      coordinates:
+        - [[44.7730704, 20.3096543], [44.7724154, 20.3085201], [44.772365, 20.3069371],
+           [44.7730452, 20.3056139], [44.7741286, 20.3047396], [44.7755898, 20.3044325],
+           [44.7767739, 20.3045979], [44.7776557, 20.3050941], [44.7784619, 20.3059447],
+           [44.7789658, 20.3072679], [44.778865, 20.3084256], [44.7782352, 20.3095597],
+           [44.7769755, 20.3104812], [44.7753883, 20.3107647], [44.7743553, 20.310434],
+           [44.7735239, 20.3100559], [44.7730704, 20.3096543]]
+
+  - farm_id: wadi-al-dawasir-demo
+    name: Pivot B
+    area_ha: 39
+    crop: alfalfa
+    planting_date: "2026-01-01"
+    soil_type: loamy_sand
+    system: pivot
+    system_params:
+      application_rate_mm_h: 0.45
+      max_runtime_h: 24   # a pivot runs in daily cycles; a bigger refill continues next day
+    boundary:
+      type: Polygon
+      coordinates:
+        - [[44.783712, 20.3087315], [44.7842129, 20.3087148], [44.7850178, 20.3084463],
+           [44.7857155, 20.3080773], [44.7861269, 20.3076746], [44.7865562, 20.3071714],
+           [44.7869676, 20.3062655], [44.7871107, 20.3053931], [44.7868961, 20.3045207],
+           [44.7863594, 20.3035477], [44.7853756, 20.3027089], [44.7839446, 20.3023398],
+           [44.7825314, 20.3024908], [44.7816192, 20.3029773], [44.7808857, 20.3036819],
+           [44.7804582, 20.304561], [44.7802794, 20.3053831], [44.7803509, 20.306289],
+           [44.7807444, 20.307262], [44.7816031, 20.3081343], [44.7826942, 20.3085873],
+           [44.783712, 20.3087315]]

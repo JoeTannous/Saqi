@@ -32,8 +32,9 @@ const T = {
     day: "Day", planned: "Planned", done: "Done",
     pastNote: "Days without a log are counted as if the plan was followed.",
     today: "Today", irrigateToday: "Irrigate today", noIrrigation: "No irrigation",
-    withSystem: (mm, sys) => `${mm} mm with ${sys}`,
-    nextOn: (day, rt) => `Next: ${day}, about ${rt}`,
+    withSystem: (mm, m3) => `${mm}\u00a0mm of water, ${m3}\u00a0m³ for this block`,
+    rateLine: (sys, rate, lph) => lph ? `${sys} at ${rate}\u00a0mm/h (drippers ${lph}\u00a0L/h)` : `${sys} at ${rate}\u00a0mm/h`,
+    nextOn: (day, rt, mm) => `Next: ${day}, about ${rt} (${mm}\u00a0mm)`,
     noneSoon: "None needed in the next 6 days.",
     carry: (max) => `That's longer than a ${max} set, so the rest continues tomorrow.`,
     continuing: "Finishing yesterday's refill.",
@@ -85,8 +86,9 @@ const T = {
     day: "Jour", planned: "Prévu", done: "Fait",
     pastNote: "Les jours sans note sont comptés comme si le plan avait été suivi.",
     today: "Aujourd'hui", irrigateToday: "Irriguer aujourd'hui", noIrrigation: "Pas d'irrigation",
-    withSystem: (mm, sys) => `${mm} mm en ${sys}`,
-    nextOn: (day, rt) => `Prochaine : ${day}, environ ${rt}`,
+    withSystem: (mm, m3) => `${mm}\u00a0mm d'eau, ${m3}\u00a0m³ pour la parcelle`,
+    rateLine: (sys, rate, lph) => lph ? `${sys} à ${rate}\u00a0mm/h (goutteurs ${lph}\u00a0L/h)` : `${sys} à ${rate}\u00a0mm/h`,
+    nextOn: (day, rt, mm) => `Prochaine : ${day}, environ ${rt} (${mm}\u00a0mm)`,
     noneSoon: "Rien à prévoir dans les 6 prochains jours.",
     carry: (max) => `C'est plus long qu'un poste de ${max} : le reste continue demain.`,
     continuing: "Suite du remplissage d'hier.",
@@ -138,8 +140,9 @@ const T = {
     day: "اليوم", planned: "المخطط", done: "المنفّذ",
     pastNote: "الأيام غير المسجّلة تُحسب كأن الخطة نُفّذت.",
     today: "اليوم", irrigateToday: "اسقِ اليوم", noIrrigation: "لا ري اليوم",
-    withSystem: (mm, sys) => `${mm} ملم عبر ${sys}`,
-    nextOn: (day, rt) => `الري التالي: ${day}، حوالي ${rt}`,
+    withSystem: (mm, m3) => `${mm}\u00a0ملم مي، ${m3}\u00a0م³ لهالقطعة`,
+    rateLine: (sys, rate, lph) => lph ? `${sys} بمعدل ${rate}\u00a0ملم/ساعة (النقّاطة ${lph}\u00a0ل/ساعة)` : `${sys} بمعدل ${rate}\u00a0ملم/ساعة`,
+    nextOn: (day, rt, mm) => `الري التالي: ${day}، حوالي ${rt} (${mm}\u00a0ملم)`,
     noneSoon: "لا حاجة للري في الأيام الستة القادمة.",
     carry: (max) => `المدة أطول من ${max} في المرة الواحدة، فيُكمَل الباقي غداً.`,
     continuing: "إكمال ري الأمس.",
@@ -359,6 +362,12 @@ function render(plan) {
   cav.textContent = t().caveat;
 }
 
+// System name with a capital, for the start of the rate line ("Drip at 5.9 mm/h").
+function sysName(b, L) {
+  const name = L.systems[b.system] || b.system;
+  return lang === "ar" ? name : name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 function renderBlock(plan, b) {
   const L = t();
   const node = $("#block-tpl").content.firstElementChild.cloneNode(true);
@@ -375,7 +384,11 @@ function renderBlock(plan, b) {
     $(".when", node).textContent = L.irrigateToday;
     answer.textContent = hm(d.runtime_h);
     answer.classList.add("go");
-    $(".detail", node).textContent = L.withSystem(mm(d.gross_mm), sys);
+    $(".detail", node).textContent = L.withSystem(mm(d.gross_mm), nf(d.volume_m3, 0));
+    const rate = $(".rate", node);
+    rate.hidden = false;
+    rate.textContent = L.rateLine(sysName(b, L), nf(b.application_rate_mm_h, 1),
+      b.emitter_flow_lph ? nf(b.emitter_flow_lph, 1) : null);
     const prev = b.past[b.past.length - 1];
     const carry = $(".carry", node);
     if (d.capped) { carry.hidden = false; carry.textContent = L.carry(hm(b.max_runtime_h)); }
@@ -384,7 +397,7 @@ function renderBlock(plan, b) {
     $(".when", node).textContent = L.today;
     answer.textContent = L.noIrrigation;
     const next = b.forecast.find((f) => f.irrigate);
-    $(".detail", node).textContent = next ? L.nextOn(weekday(next.date, "long"), hm(next.runtime_h)) : L.noneSoon;
+    $(".detail", node).textContent = next ? L.nextOn(weekday(next.date, "long"), hm(next.runtime_h), mm(next.gross_mm)) : L.noneSoon;
   }
 
   drawProfile($(".profile", node), d);
@@ -415,7 +428,7 @@ function renderBlock(plan, b) {
   const tbody = $(".past tbody", node);
   b.past.slice().reverse().forEach((day) => {
     const tr = document.createElement("tr");
-    const planned = day.irrigate ? hm(day.runtime_h) : L.none;
+    const planned = day.irrigate ? `${hm(day.runtime_h)}, ${mm(day.gross_mm)} mm` : L.none;
     let done, cls;
     if (day.applied_source === "logged") { done = `${hm(day.logged_runtime_h)} (${L.logged})`; cls = "logged"; }
     else { done = L.assumed; cls = "assumed"; }

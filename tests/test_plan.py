@@ -150,3 +150,9 @@ def test_full_window_needs_today(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     with pytest.raises(ValueError, match="does not include today"):
         full_window(FARM, TODAY - timedelta(days=2), TODAY, None, None)  # type: ignore[arg-type]
+
+
+def test_volume_is_gross_depth_over_the_block() -> None:
+    # Day 0 refills 8 mm net -> 8 / 0.9 = 8.889 mm gross; 1 mm on 1 ha = 10 m3 -> 88.89 m3.
+    plan = list(plan_days(_block(None), _days([16]), today=PLANTED))
+    assert plan[0].volume_m3 == pytest.approx(8.0 / 0.9 * 1.0 * 10)

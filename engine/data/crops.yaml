@@ -130,3 +130,21 @@ apple:
   l_dev: 50
   l_mid: 130
   l_late: 30
+
+alfalfa:
+  verify: true
+  perennial: true
+  # FAO-56 Table 12, alfalfa hay, "averaged cutting effects" (0.40 / 0.95 / 0.90),
+  # so one Kc curve stands in for the cut-and-regrow cycles. Established stand:
+  # roots 1.0-2.0 m (1.2 m used), p = 0.55. Stage lengths cover one year from the
+  # season start. Real Kc dips after each cut; confirm with the farm's cutting calendar.
+  kc_ini: 0.40
+  kc_mid: 0.95
+  kc_end: 0.90
+  zr_min_m: 1.20
+  zr_max_m: 1.20
+  p: 0.55
+  l_ini: 10
+  l_dev: 30
+  l_mid: 300
+  l_late: 25
