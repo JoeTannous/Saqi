@@ -91,3 +91,21 @@ every 3 hours:
 
 The app still calls Open-Meteo live if the table is missing or older than 12 h, and
 falls back to the stored weather (with a "Weather updated X h ago" note) if that fails.
+
+## Satellite monitoring (Sentinel-2)
+
+Each block with a `boundary` (a GeoJSON Polygon in `[lon, lat]`, drawn on geojson.io) gets:
+crop vigour (NDVI), leaf moisture (NDMI), their 2-4 week trend, field evenness, warning flags,
+a 90-day trend line and an NDVI colour map. The chat can read it through `get_field_health`.
+Thresholds are in `engine/data/satellite.yaml` (rules of thumb, `verify: true`). The
+NDVI-based Kc estimate is shown to the chat for comparison only; the water balance does not use it.
+
+Setup (free):
+1. Create an account at dataspace.copernicus.eu, then in the Sentinel Hub dashboard create an
+   OAuth client. Copy its client ID and secret.
+2. GitHub repo → Settings → Secrets and variables → Actions: add `SH_CLIENT_ID` and
+   `SH_CLIENT_SECRET` (`DATABASE_URL` is already there).
+3. Actions → Sync satellite → Run workflow. The first run backfills 120 days per block; after
+   that it runs daily. Render needs no new variables: the app reads what the job stored.
+
+Sentinel-2 pixels are 10 m, so plots under about 0.5 ha give rough readings (the page says so).

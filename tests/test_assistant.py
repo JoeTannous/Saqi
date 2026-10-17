@@ -74,7 +74,9 @@ def test_farmer_report_is_logged_then_plan_is_read(tmp_path: Path) -> None:
     first = fake.messages.calls[0]
     assert "Test farm" in first["system"][0]["text"]
     assert TODAY.isoformat() in first["system"][0]["text"]
-    assert {t["name"] for t in first["tools"]} == {"get_plan", "get_history", "log_irrigation"}
+    assert {t["name"] for t in first["tools"]} == {
+        "get_plan", "get_history", "log_irrigation", "get_field_health"
+    }
 
     # The plan tool result reached the model with the logged day and engine fields.
     plan_result = fake.messages.calls[2]["messages"][-1]["content"][0]

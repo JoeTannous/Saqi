@@ -25,7 +25,10 @@ Out until after the trip: Supabase/auth, full chat, WhatsApp automation (forward
 - [ ] Supabase + auth + daily scheduled job
 - [ ] Chat: what-if tool ("what if I skip today?") computed by the engine
 - [ ] WhatsApp daily message + "done 2h" logging
-- [ ] Sentinel-2 NDVI, soil sensors, deficit irrigation
+- [x] Sentinel-2 field monitoring: NDVI/NDMI trend, evenness, flags, NDVI map, chat tool (Oct 2026)
+- [ ] Draw real block outlines for pilot plots; validate satellite flags against field walks
+- [ ] Use NDVI-based Kc in the engine (after comparing with the textbook Kc for a few weeks)
+- [ ] Soil sensors, deficit irrigation
 
 ## Prompt 2: weather + CLI
 ```

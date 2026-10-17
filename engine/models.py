@@ -36,6 +36,27 @@ class SystemParams(BaseModel):
     max_runtime_h: float | None = Field(default=None, gt=0)
 
 
+class Boundary(BaseModel):
+    """Field outline as a GeoJSON Polygon in lon/lat (WGS84), e.g. drawn on geojson.io."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["Polygon"]
+    coordinates: list[list[tuple[float, float]]]
+
+    @model_validator(mode="after")
+    def _closed_ring(self) -> Self:
+        if not self.coordinates:
+            raise ValueError("boundary needs at least one ring")
+        ring = self.coordinates[0]
+        if len(ring) < 4 or ring[0] != ring[-1]:
+            raise ValueError("boundary ring must be closed and have at least 3 corners")
+        for lon, lat in ring:
+            if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+                raise ValueError("boundary coordinates must be [lon, lat] in degrees")
+        return self
+
+
 class Block(BaseModel):
     """One irrigated crop area. planting_date is season start for perennials."""
 
@@ -50,6 +71,7 @@ class Block(BaseModel):
     system: SystemName
     system_params: SystemParams
     kr: float = Field(default=1.0, ge=0)
+    boundary: Boundary | None = None
 
     @model_validator(mode="after")
     def _resolve_system(self) -> Self:

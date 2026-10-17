@@ -109,6 +109,7 @@ def test_farmer_report_is_logged_then_plan_is_read(
         "get_plan",
         "get_history",
         "log_irrigation",
+        "get_field_health",
     }
     log_tool = next(t for t in first["tools"] if t["function"]["name"] == "log_irrigation")
     assert log_tool["type"] == "function"

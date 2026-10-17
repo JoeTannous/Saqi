@@ -1,0 +1,20 @@
+# Thresholds for reading Sentinel-2 NDVI / NDMI over a block. All verify: true:
+# they are common remote-sensing rules of thumb, not calibrated for these farms.
+verify: true
+min_valid_pixels: 5          # fewer cloud-free 10 m pixels than this: ignore the pass
+valid_fraction_of_best: 0.7  # a pass must see >= 70% of the block's best pixel count
+baseline_from_days: 28       # compare the latest pass with passes 7-28 days earlier
+baseline_to_days: 7
+trend_step: 0.05             # NDVI/NDMI change counted as rising/falling
+drop_alert: 0.08             # change that raises a vigour-drop / canopy-drying flag
+uneven_cv: 0.15              # NDVI std / mean above this: uneven
+patchy_cv: 0.30              # above this: patchy (possible blocked emitters, leaks, pests)
+stale_days: 12               # latest usable pass older than this: flag as stale
+small_plot_pixels: 20        # fewer pixels than this: warn that the plot is small for 10 m data
+# Satellite Kc estimate (comparison only, not used by the engine):
+# fc = (NDVI - ndvi_bare) / (ndvi_full - ndvi_bare), Kd = min(1, ml * fc),
+# Kc = kc_min + (Kc_mid - kc_min) * Kd   (Allen & Pereira 2009 density coefficient)
+ndvi_bare: 0.15
+ndvi_full: 0.85
+ml: 1.5
+kc_min: 0.15

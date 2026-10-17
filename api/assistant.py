@@ -45,6 +45,7 @@ class FarmTools:
     get_plan: Callable[[str], dict[str, Any]]
     get_history: Callable[[str, int], dict[str, Any]]
     log_irrigation: Callable[[dict[str, Any]], dict[str, Any]]
+    get_field_health: Callable[[str], dict[str, Any]] | None = None
 
 
 @dataclass
@@ -104,6 +105,20 @@ TOOLS: list[dict[str, Any]] = [
             },
             "required": ["block_id", "date"],
         },
+    },
+    {
+        "name": "get_field_health",
+        "description": (
+            "Satellite view of one block from Sentinel-2: crop vigour (NDVI), canopy moisture "
+            "(NDMI), their change over the last weeks, how even the field is, warning flags, "
+            "and the date of the image. Use for questions like 'how is my field', 'is the "
+            "crop healthy', 'compare the two plots'. Never use it for irrigation amounts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"block_id": {"type": "string"}},
+            "required": ["block_id"],
+        },
         "cache_control": {"type": "ephemeral"},
     },
 ]
@@ -158,7 +173,15 @@ Rules:
 8. Write for a farmer on a phone: 1 to 4 short sentences, plain words, no headings, no tables,
    no markdown. Explain the water balance in everyday terms ("the soil has used up X mm of the
    water the roots can reach") unless the person uses technical terms first.
-9. Reply in the language the person writes in. If they write in Lebanese Arabic, reply in simple
+9. Satellite (get_field_health): Sentinel-2 images every few days at 10 m. Say "crop
+   vigour" for NDVI and "leaf moisture" for NDMI, and give the image date. A vigour drop or
+   drying leaves can mean water stress (blocked emitters, a leak, pump trouble), pests or
+   disease: suggest walking the field, especially the weaker parts, and checking the
+   emitters. "patchy" means parts of the field look much weaker than others. A satellite
+   reading never changes the irrigation amount: amounts come only from get_plan. If there is
+   no outline or no clear image yet, say so. Mention kc_estimate only if asked, as
+   experimental.
+10. Reply in the language the person writes in. If they write in Lebanese Arabic, reply in simple
    Lebanese-friendly Arabic. If unclear, use {_LANG_NAMES.get(lang, 'English')}.
 """
 
@@ -414,6 +437,10 @@ def _run_tool(
         if name == "get_history":
             days = max(1, min(int(args.get("days", 7)), 60))
             return tools.get_history(str(args["block_id"]), days), False
+        if name == "get_field_health":
+            if tools.get_field_health is None:
+                return {"error": "satellite data is not available"}, True
+            return tools.get_field_health(str(args["block_id"])), False
         if name == "log_irrigation":
             row = tools.log_irrigation(args)
             result.logged.append(row)

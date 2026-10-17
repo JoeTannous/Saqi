@@ -10,7 +10,6 @@ Run: uvicorn api.main:app --reload   then open http://127.0.0.1:8000
 
 import hmac
 import os
-import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -33,6 +32,8 @@ from api.assistant import (
     run_chat,
     system_prompt,
 )
+from api.fieldstore import FieldStore, MemoryFieldStore, PostgresFieldStore
+from api.ids import slug
 from api.logstore import CsvLogStore, LogStore, PostgresLogStore
 from api.weatherstore import (
     PostgresWeatherStore,
@@ -43,6 +44,7 @@ from api.weatherstore import (
 from engine.balance import application_rate_mm_h
 from engine.catalog import get_crop, get_soil, load_systems
 from engine.cli import FarmConfig, farm_today, load_farm
+from engine.fieldhealth import FieldHealth, assess
 from engine.inputs import full_window
 from engine.models import Block, DailyInput, Farm, PlanDay
 from engine.plan import history_start, plan_days
@@ -50,6 +52,7 @@ from engine.plan import history_start, plan_days
 ROOT = Path(__file__).resolve().parent.parent
 WeatherFn = Callable[[Farm, date, date], "list[DailyInput] | WeatherResult"]
 PAST_DAYS = 7
+SATELLITE_DAYS = 90
 COOKIE_NAME = "saqi_code"
 
 
@@ -122,10 +125,6 @@ class LogEntryIn(BaseModel):
         return self
 
 
-def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "block"
-
-
 def default_farms_dir() -> Path:
     farms = ROOT / "farms"
     if farms.is_dir() and any(farms.glob("*.yaml")):
@@ -151,8 +150,13 @@ def create_app(
     chat_client: Any = "auto",
     access_code: str | None = None,
     weather_store: WeatherStore | None = None,
+    field_store: FieldStore | None = None,
 ) -> FastAPI:
     farms_root = farms_dir or default_farms_dir()
+    if field_store is None:
+        field_url = os.environ.get("DATABASE_URL", "").strip()
+        field_store = PostgresFieldStore(field_url) if field_url else MemoryFieldStore()
+    fields: FieldStore = field_store
     if weather_store is None and weather is None:
         weather_url = os.environ.get("DATABASE_URL", "").strip()
         if weather_url:
@@ -187,6 +191,7 @@ def create_app(
         store.ensure_schema()
         if weather_store is not None:
             weather_store.ensure_schema()
+        fields.ensure_schema()
         yield
 
     app = FastAPI(title="Saqi", version="0.1.0", lifespan=lifespan)
@@ -260,6 +265,53 @@ def create_app(
             plans.append((block, days))
         return plans
 
+    def field_health(farm_id: str, block: Block, today: date) -> FieldHealth | None:
+        if block.boundary is None:
+            return None
+        since = today - timedelta(days=SATELLITE_DAYS)
+        observations = fields.observations(farm_id, slug(block.name), since)
+        return assess(observations, today, kc_mid=get_crop(block.crop).kc_mid)
+
+    def field_summary(farm_id: str, block: Block, today: date) -> dict[str, Any] | None:
+        health = field_health(farm_id, block, today)
+        if health is None:
+            return None
+        latest = health.latest
+        mapped = fields.latest_map(farm_id, slug(block.name)) if latest else None
+        return {
+            "status": health.status,
+            "date": latest.date if latest else None,
+            "age_days": health.age_days,
+            "ndvi": _r(latest.ndvi, 2) if latest else None,
+            "ndmi": _r(latest.ndmi, 2) if latest else None,
+            "ndvi_change": _r(health.ndvi_change, 2),
+            "ndmi_change": _r(health.ndmi_change, 2),
+            "vigour_trend": health.vigour_trend,
+            "moisture_trend": health.moisture_trend,
+            "evenness": health.evenness,
+            "flags": health.flags,
+            "kc_estimate": _r(health.kc_estimate, 2),
+            "valid_pixels": latest.valid_pixels if latest else None,
+            "map_date": mapped.date if mapped else None,
+            "series": [
+                {"date": o.date, "ndvi": _r(o.ndvi, 3), "ndmi": _r(o.ndmi, 3)}
+                for o in health.series
+            ],
+        }
+
+    @app.get("/api/farms/{farm_id}/blocks/{block_id}/ndvi.png")
+    def ndvi_map(farm_id: str, block_id: str) -> Response:
+        config = load(farm_id)
+        find_block(config, block_id)
+        mapped = fields.latest_map(farm_id, block_id)
+        if mapped is None:
+            raise HTTPException(404, "No satellite map for this block yet")
+        return Response(
+            mapped.png,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
     @app.get("/healthz")
     def healthz() -> dict[str, bool]:
         return {"ok": True}
@@ -317,6 +369,7 @@ def create_app(
                     "past": [d for d in days if week_ago <= d.date < today],
                     "forecast": [d for d in days if d.date > today],
                     "history_from": days[0].date if days else None,
+                    "field": field_summary(farm_id, block, today),
                 }
             )
         return {
@@ -395,8 +448,30 @@ def create_app(
             )
             return write_log(config, farm_id, str(args["block_id"]), entry)
 
+        def get_field_health(block_id: str) -> dict[str, Any]:
+            block = find_block(config, block_id)
+            summary = field_summary(farm_id, block, config.today)
+            if summary is None:
+                return {"status": "no_boundary",
+                        "note": "This block has no field outline, so there is no satellite data."}
+            series = summary.pop("series")
+            summary["recent_passes"] = series[-8:]
+            summary["engine_kc_today"] = next(
+                (_r(d.kc, 2) for b, days in block_plans(config, farm_id)
+                 if slug(b.name) == block_id for d in days if d.date == config.today),
+                None,
+            )
+            summary["notes"] = (
+                "Sentinel-2, 10 m pixels, a pass every few days; cloudy passes are skipped. "
+                "ndvi = crop vigour/greenness (bare soil ~0.1-0.2, dense crop ~0.8). "
+                "ndmi = canopy water content. Changes compare the latest pass with passes "
+                "7-28 days earlier. kc_estimate is experimental, from NDVI, not used for "
+                "irrigation amounts."
+            )
+            return summary
+
         return FarmTools(get_plan=get_plan, get_history=get_history,
-                         log_irrigation=log_irrigation)
+                         log_irrigation=log_irrigation, get_field_health=get_field_health)
 
     @app.get("/api/assistant")
     def assistant_status() -> dict[str, Any]:
@@ -452,6 +527,10 @@ def create_app(
     if static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")
     return app
+
+
+def _r(value: float | None, digits: int) -> float | None:
+    return None if value is None else round(value, digits)
 
 
 def block_info(block: Block) -> dict[str, Any]:

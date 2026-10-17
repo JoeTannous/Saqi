@@ -3,6 +3,19 @@
 
 const T = {
   en: {
+    fieldTitle: "From space", imageOf: (d) => `Satellite image of ${d}`,
+    vigour: "Crop vigour", moisture: "Leaf moisture", evenness: "Evenness",
+    trends: { rising: "rising", steady: "steady", falling: "falling" },
+    evenWords: { even: "even", uneven: "uneven", patchy: "patchy" },
+    legendLow: "Bare", legendHigh: "Dense crop", trendLabel: "Crop vigour, last 90 days",
+    noSat: "Waiting for the first clear satellite image of this field.",
+    flagText: {
+      vigour_drop: "Crop vigour has dropped in the last weeks. Walk the field and check emitters, pump pressure and for pests.",
+      canopy_drying: "Leaves are drier than in recent weeks. Check that water is reaching the plants.",
+      patchy: "Parts of the field look much weaker than others. Check the pale spots on the map.",
+      stale: "No clear image for a while, so this reading may be out of date.",
+      small_plot: "This plot is small for 10 m satellite pixels, so readings are rough.",
+    },
     weatherAge: (h) => h >= 48 ? `Weather updated ${Math.round(h / 24)} days ago` : `Weather updated ${h} h ago`,
     chatTitle: "Ask Saqi", chatHint: "Ask about today's advice, or tell Saqi what you irrigated and it will log it.",
     send: "Send", thinking: "Thinking…", loggedNote: (rt, d) => `Logged: ${rt} on ${d}`,
@@ -43,6 +56,19 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   fr: {
+    fieldTitle: "Vu du ciel", imageOf: (d) => `Image satellite du ${d}`,
+    vigour: "Vigueur", moisture: "Humidité des feuilles", evenness: "Homogénéité",
+    trends: { rising: "en hausse", steady: "stable", falling: "en baisse" },
+    evenWords: { even: "homogène", uneven: "inégale", patchy: "très inégale" },
+    legendLow: "Sol nu", legendHigh: "Culture dense", trendLabel: "Vigueur, 90 derniers jours",
+    noSat: "En attente de la première image satellite claire de cette parcelle.",
+    flagText: {
+      vigour_drop: "La vigueur a baissé ces dernières semaines. Parcourez la parcelle : goutteurs, pression de la pompe, ravageurs.",
+      canopy_drying: "Les feuilles sont plus sèches que ces dernières semaines. Vérifiez que l'eau arrive bien aux plantes.",
+      patchy: "Certaines zones sont bien plus faibles que d'autres. Vérifiez les taches claires sur la carte.",
+      stale: "Pas d'image claire depuis un moment : la lecture peut être dépassée.",
+      small_plot: "La parcelle est petite pour des pixels de 10 m : les valeurs sont approximatives.",
+    },
     weatherAge: (h) => h >= 48 ? `Météo mise à jour il y a ${Math.round(h / 24)} jours` : `Météo mise à jour il y a ${h} h`,
     chatTitle: "Demander à Saqi", chatHint: "Posez une question sur le conseil du jour, ou dites à Saqi ce que vous avez arrosé et il le notera.",
     send: "Envoyer", thinking: "Réflexion…", loggedNote: (rt, d) => `Noté : ${rt} le ${d}`,
@@ -83,6 +109,19 @@ const T = {
     hm: (h, m) => h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`,
   },
   ar: {
+    fieldTitle: "من الفضاء", imageOf: (d) => `صورة قمر صناعي بتاريخ ${d}`,
+    vigour: "قوة النمو", moisture: "رطوبة الأوراق", evenness: "تجانس الحقل",
+    trends: { rising: "بارتفاع", steady: "ثابتة", falling: "بانخفاض" },
+    evenWords: { even: "متجانس", uneven: "غير متجانس", patchy: "متفاوت كثيراً" },
+    legendLow: "تربة عارية", legendHigh: "زرع كثيف", trendLabel: "قوة النمو، آخر ٩٠ يوماً",
+    noSat: "بانتظار أول صورة قمر صناعي واضحة لهذا الحقل.",
+    flagText: {
+      vigour_drop: "قوة النمو نزلت بالأسابيع الأخيرة. افحص الحقل: النقّاطات، ضغط المضخة، والحشرات.",
+      canopy_drying: "الأوراق أنشف من الأسابيع الماضية. تأكّد إنو المي عم توصل للزرع.",
+      patchy: "في أجزاء من الحقل أضعف بكتير من غيرها. افحص البقع الفاتحة على الخريطة.",
+      stale: "ما في صورة واضحة من فترة، فالقراءة ممكن تكون قديمة.",
+      small_plot: "القطعة صغيرة بالنسبة لدقة ١٠ أمتار، فالأرقام تقريبية.",
+    },
     weatherAge: (h) => h >= 48 ? `آخر تحديث للطقس قبل ${Math.round(h / 24)} أيام` : `آخر تحديث للطقس قبل ${h} ساعة`,
     chatTitle: "اسأل ساقي", chatHint: "اسأل عن توصية اليوم، أو أخبر ساقي كم سقيت وهو يسجّلها.",
     send: "إرسال", thinking: "عم فكّر…", loggedNote: (rt, d) => `تم التسجيل: ${rt} بتاريخ ${d}`,
@@ -377,8 +416,85 @@ function renderBlock(plan, b) {
     tbody.append(tr);
   });
 
+  renderField(node, plan, b);
   wireLog(node, plan, b);
   return node;
+}
+
+function renderField(node, plan, b) {
+  const f = b.field;
+  const box = $(".sat", node);
+  if (!f) return; // no field outline for this block
+  const L = t();
+  box.hidden = false;
+  box.querySelectorAll("[data-i18n]").forEach((el) => { const v = L[el.dataset.i18n]; if (typeof v === "string") el.textContent = v; });
+  if (f.status === "no_data") {
+    $(".field-body", box).hidden = true;
+    $(".field-trend", box).hidden = true;
+    const empty = $(".field-empty", box);
+    empty.hidden = false;
+    empty.textContent = L.noSat;
+    return;
+  }
+  $(".field-date", box).textContent = L.imageOf(dayLabel(f.date));
+
+  if (f.map_date) {
+    const fig = $(".field-map", box);
+    fig.hidden = false;
+    const img = $("img", fig);
+    img.src = `/api/farms/${encodeURIComponent(plan.farm.id)}/blocks/${encodeURIComponent(b.id)}/ndvi.png?d=${f.map_date}`;
+    img.alt = `${L.vigour}: ${L.imageOf(dayLabel(f.map_date))}`;
+  }
+
+  const dl = $(".field-read", box);
+  const row = (label, value, note) => {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    const v = document.createElement("span");
+    v.className = "val";
+    v.textContent = value;
+    dd.append(v);
+    if (note) {
+      const n = document.createElement("span");
+      n.className = "note" + (note.cls ? ` ${note.cls}` : "");
+      n.textContent = note.text;
+      dd.append(n);
+    }
+    dl.append(dt, dd);
+  };
+  const trendNote = (trend) => trend ? { text: L.trends[trend], cls: trend === "falling" ? "down" : "" } : null;
+  row(L.vigour, nf(f.ndvi, 2), trendNote(f.vigour_trend));
+  row(L.moisture, nf(f.ndmi, 2), trendNote(f.moisture_trend));
+  if (f.evenness) row(L.evenness, L.evenWords[f.evenness], null);
+
+  const ul = $(".field-flags", box);
+  f.flags.forEach((flag) => {
+    const li = document.createElement("li");
+    li.textContent = L.flagText[flag] || flag;
+    ul.append(li);
+  });
+
+  drawTrend($(".field-trend svg", box), f.series, plan.today);
+}
+
+// NDVI over the last 90 days: one series, so no legend; hover each pass for its value.
+function drawTrend(svg, series, todayIso) {
+  const W = 320, H = 64, pad = 6;
+  if (!series.length) { svg.parentElement.hidden = true; return; }
+  const end = parseDate(todayIso).getTime();
+  const start = end - 90 * 86400000;
+  const x = (iso) => pad + ((parseDate(iso).getTime() - start) / (end - start)) * (W - 2 * pad);
+  const y = (v) => H - pad - Math.max(0, Math.min(1, v)) * (H - 2 * pad);
+  const pts = series.map((p) => [x(p.date), y(p.ndvi), p]);
+  const path = pts.map(([px, py], i) => `${i ? "L" : "M"}${px.toFixed(1)},${py.toFixed(1)}`).join("");
+  const grid = [0.25, 0.5, 0.75].map((g) => `<line class="grid" x1="0" x2="${W}" y1="${y(g)}" y2="${y(g)}"/>`).join("");
+  const dots = pts.map(([px, py, p], i) => {
+    const last = i === pts.length - 1;
+    return `<g class="pt${last ? " last" : ""}"><circle class="hit" cx="${px}" cy="${py}" r="9"/><circle class="dot" cx="${px}" cy="${py}" r="${last ? 4 : 2.5}"/><title>${dayLabel(p.date)}: ${nf(p.ndvi, 2)}</title></g>`;
+  }).join("");
+  svg.innerHTML = `${grid}<path class="line" d="${path}"/>${dots}`;
+  svg.setAttribute("aria-label", `${t().trendLabel}: ${series.map((p) => `${dayLabel(p.date)} ${nf(p.ndvi, 2)}`).join(", ")}`);
 }
 
 function drawProfile(fig, d) {

@@ -20,3 +20,11 @@ blocks:
       emitter_flow_lph: 1.6
       emitter_spacing_m: 0.3
       lateral_spacing_m: 0.9
+    # Field outline for satellite monitoring: GeoJSON Polygon, [lon, lat] pairs, closed.
+    # ILLUSTRATIVE ONLY: about 2 ha drawn near the example coordinates, not a surveyed
+    # field. Replace with the real block outline (draw it on geojson.io).
+    boundary:
+      type: Polygon
+      coordinates:
+        - [[35.9000, 33.8490], [35.9016, 33.8490], [35.9016, 33.8502],
+           [35.9000, 33.8502], [35.9000, 33.8490]]
