@@ -393,7 +393,7 @@ function renderBlock(plan, b) {
     $(".detail", node).textContent = L.withSystem(mm(d.gross_mm), nf(d.volume_m3, 0));
     const rate = $(".rate", node);
     rate.hidden = false;
-    rate.textContent = L.rateLine(sysName(b, L), nf(b.application_rate_mm_h, 1),
+    rate.textContent = L.rateLine(sysName(b, L), nf(b.application_rate_mm_h, b.application_rate_mm_h < 1 ? 2 : 1),
       b.emitter_flow_lph ? nf(b.emitter_flow_lph, 1) : null);
     const prev = b.past[b.past.length - 1];
     const carry = $(".carry", node);
@@ -426,7 +426,7 @@ function renderBlock(plan, b) {
     L.whyRain(Number(mm(d.peff_mm)), mm(d.rain_mm)),
     L.why2(mm(d.dr_mm), mm(d.raw_mm), mm(d.taw_mm)),
     d.irrigate
-      ? L.why3go(mm(d.net_mm), mm(d.gross_mm), Math.round(b.efficiency * 100), hm(d.runtime_h), nf(b.application_rate_mm_h, 1))
+      ? L.why3go(mm(d.net_mm), mm(d.gross_mm), Math.round(b.efficiency * 100), hm(d.runtime_h), nf(b.application_rate_mm_h, b.application_rate_mm_h < 1 ? 2 : 1))
       : L.why3no(mm((d.trigger_mm ?? d.raw_mm) - d.dr_mm)),
   ];
   why.innerHTML = paras.map((p) => `<p>${p}</p>`).join("") + `<p class="source">${L.whySource}</p>`;
