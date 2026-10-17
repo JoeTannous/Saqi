@@ -104,7 +104,8 @@ def assess(
     ]
     ndvi_change = latest.ndvi - median(o.ndvi for o in window) if window else None
     ndmi_change = latest.ndmi - median(o.ndmi for o in window) if window else None
-    cv = latest.ndvi_std / latest.ndvi if latest.ndvi > 0.1 else None
+    # On bare soil (low NDVI) pixel-to-pixel noise is not crop unevenness.
+    cv = latest.ndvi_std / latest.ndvi if latest.ndvi >= t["min_ndvi_for_evenness"] else None
     if cv is None:
         evenness = None
     elif cv > t["patchy_cv"]:

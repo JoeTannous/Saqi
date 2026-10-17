@@ -50,6 +50,13 @@ def test_patchy_field_is_flagged() -> None:
     assert h.vigour_trend is None  # no baseline yet
 
 
+def test_bare_soil_is_not_called_patchy() -> None:
+    # NDVI 0.16 is bare soil; std 0.06 gives cv 0.375 but evenness is not judged.
+    h = assess([obs(1, 0.16, std=0.06)], TODAY)
+    assert h.evenness is None
+    assert "patchy" not in h.flags
+
+
 def test_stale_and_small_plot() -> None:
     h = assess([obs(20, 0.5, pixels=12)], TODAY)
     assert h.status == "stale"

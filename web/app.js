@@ -276,6 +276,16 @@ async function api(path, opts) {
   }
 }
 
+// Images can't carry the access-code header, so fetch them like the API and show a blob URL.
+async function apiImage(path) {
+  const headers = new Headers();
+  const code = storedCode();
+  if (code) headers.set("X-Saqi-Code", code);
+  const res = await fetch(`/api${path}`, { headers });
+  if (!res.ok) throw new Error(res.statusText);
+  return URL.createObjectURL(await res.blob());
+}
+
 function setStatus(text, isError = false) {
   const main = $("#main");
   main.innerHTML = "";
@@ -442,8 +452,10 @@ function renderField(node, plan, b) {
     const fig = $(".field-map", box);
     fig.hidden = false;
     const img = $("img", fig);
-    img.src = `/api/farms/${encodeURIComponent(plan.farm.id)}/blocks/${encodeURIComponent(b.id)}/ndvi.png?d=${f.map_date}`;
     img.alt = `${L.vigour}: ${L.imageOf(dayLabel(f.map_date))}`;
+    apiImage(`/farms/${encodeURIComponent(plan.farm.id)}/blocks/${encodeURIComponent(b.id)}/ndvi.png?d=${f.map_date}`)
+      .then((url) => { img.src = url; })
+      .catch(() => { fig.hidden = true; });
   }
 
   const dl = $(".field-read", box);
